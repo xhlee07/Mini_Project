@@ -1,5 +1,6 @@
 package com.ctfly.app
 
+import com.ctfly.app.domain.SessionRules
 import org.junit.Assert.*
 import org.junit.Test
 

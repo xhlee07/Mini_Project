@@ -6,6 +6,14 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ctfly.app.data.ApiFailure
+import com.ctfly.app.data.ClubGateway
+import com.ctfly.app.data.CtflyApi
+import com.ctfly.app.data.obj
+import com.ctfly.app.data.rows
+import com.ctfly.app.data.text
+import com.ctfly.app.state.AppPreferences
+import com.ctfly.app.state.AppViewModel
 import java.io.File
 import java.time.Instant
 import java.util.UUID
@@ -383,19 +391,19 @@ class PaymentStateTest {
     }
 
     @Test
-    fun tabletCheckoutAndChineseLabelsFit() {
+    fun tabletCheckoutAndMalayLabelsFit() {
         Assume.assumeFalse(BuildConfig.STAFF_APP)
         shell("wm size 2304x1440")
         shell("wm density 240")
         launch()
         start("TNG")
         val preferences = AppPreferences(app)
-        preferences.chooseLanguage("zh")
+        preferences.chooseLanguage("ms")
         scenario!!.recreate()
         change { it.set("page", "Settings") }
         change { it.set("page", "Checkout") }
-        compose.onNodeWithText("测试模式 · 不会扣款").performScrollTo().assertIsDisplayed()
-        capture("payment-tablet-chinese")
+        compose.onNodeWithText("MOD UJIAN · TIADA CAJ WANG").performScrollTo().assertIsDisplayed()
+        capture("payment-tablet-malay")
     }
 
     @Test

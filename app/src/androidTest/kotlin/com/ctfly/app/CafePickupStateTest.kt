@@ -13,6 +13,12 @@ import com.google.zxing.BinaryBitmap
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
+import com.ctfly.app.data.ClubGateway
+import com.ctfly.app.data.CtflyApi
+import com.ctfly.app.data.obj
+import com.ctfly.app.data.rows
+import com.ctfly.app.data.text
+import com.ctfly.app.state.AppViewModel
 import java.io.File
 import java.time.Instant
 import org.json.JSONArray

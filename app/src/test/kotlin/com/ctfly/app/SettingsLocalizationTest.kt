@@ -1,5 +1,7 @@
 package com.ctfly.app
 
+import com.ctfly.app.data.text
+import com.ctfly.app.state.AppStrings
 import java.io.File
 import org.junit.Assert.*
 import org.junit.Before
@@ -17,12 +19,12 @@ class SettingsLocalizationTest {
     }
 
     @Test
-    fun everyTranslationHasBothLanguagesAndMatchingPlaceholders() {
+    fun everyTranslationHasMalayAndMatchingPlaceholders() {
         val keys = mutableSetOf<String>()
         source.forEachLine { line ->
             if (line.isBlank() || line.startsWith("#")) return@forEachLine
             val parts = line.split('\t')
-            assertEquals(line, 3, parts.size)
+            assertEquals(line, 2, parts.size)
             assertTrue("Duplicate ${parts[0]}", keys.add(parts[0]))
             assertTrue(parts.all { it.isNotBlank() })
             val placeholders = Regex("\\{\\d+\\}").findAll(parts[0]).map { it.value }.toSet()
@@ -37,19 +39,17 @@ class SettingsLocalizationTest {
 
     @Test
     fun navigationAuthenticationBookingAndFeedbackAreLocalized() {
-        assertEquals("设置", AppStrings.translate("Settings", "zh"))
         assertEquals("Tetapan", AppStrings.translate("Settings", "ms"))
-        assertEquals("预约", AppStrings.translate("Reserve", "zh"))
+        assertEquals("Tempah", AppStrings.translate("Reserve", "ms"))
         assertEquals("Kata laluan", AppStrings.translate("Password", "ms"))
-        assertEquals("顾客反馈", AppStrings.translate("Customer feedback", "zh"))
-        assertEquals("L1 电竞区", AppStrings.translate("L1 Gaming", "zh"))
+        assertEquals("Maklum balas pelanggan", AppStrings.translate("Customer feedback", "ms"))
         assertEquals("L1 Permainan", AppStrings.translate("L1 Gaming", "ms"))
     }
 
     @Test
     fun dynamicLabelsPreserveNamesNumbersAndAmounts() {
-        assertEquals("RM 52.00 / 整间 / 小时", AppStrings.translate("RM 52.00 / room / hr", "zh"))
-        assertEquals("3 人", AppStrings.translate("3 player(s)", "zh"))
+        assertEquals("RM 52.00 / bilik / jam", AppStrings.translate("RM 52.00 / room / hr", "ms"))
+        assertEquals("3 pemain", AppStrings.translate("3 player(s)", "ms"))
         assertEquals(
             "Selamat kembali, Ryan Lee",
             AppStrings.translate("Welcome back, Ryan Lee", "ms"),
@@ -58,12 +58,12 @@ class SettingsLocalizationTest {
         assertTrue(
             AppStrings.translate(
                     "Whole private room · 4 gaming PCs · 3 guest(s). The room price stays the same for fewer guests.",
-                    "zh",
+                    "ms",
                 )
-                .contains("4 台电脑 · 3 人")
+                .contains("4 PC · 3 tetamu")
         )
-        assertEquals("Player-089", AppStrings.translate("Player-089", "zh"))
-        assertEquals("你的队伍：Play", AppStrings.translate("Your team: Play", "zh"))
+        assertEquals("Player-089", AppStrings.translate("Player-089", "ms"))
+        assertEquals("Pasukan anda: Play", AppStrings.translate("Your team: Play", "ms"))
         assertEquals("RM 1,234.50", AppStrings.translate("RM 1,234.50", "ms"))
     }
 

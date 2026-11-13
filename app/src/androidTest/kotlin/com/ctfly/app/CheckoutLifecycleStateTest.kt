@@ -6,6 +6,10 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ctfly.app.data.CtflyApi
+import com.ctfly.app.data.rows
+import com.ctfly.app.data.text
+import com.ctfly.app.state.AppViewModel
 import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject

@@ -21,7 +21,7 @@ const bill: Bill = {
   total: 900,
   points: 9,
   details: {
-    customer_name: "Student 李明",
+    customer_name: "Student Άννα",
     activity: "Racing simulator",
     resource: "VIP Racing Simulator 01",
     zone: "VIP",
@@ -81,7 +81,7 @@ const order = {
   points: 23,
   details: {
     activity: "Cafe order",
-    customer_name: "Student 李明",
+    customer_name: "Student Άννα",
     items: [{ name: "Coffee", qty: 3, price: 650 }, {
       name: "Water",
       qty: 2,

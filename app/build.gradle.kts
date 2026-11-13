@@ -73,11 +73,3 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }
-
-// Keep detailed procedural mesh construction off the phone's loading path.
-tasks.register<JavaExec>("bakeTourMesh") {
-    dependsOn("compileDebugUnitTestKotlin")
-    classpath = files("build/tmp/kotlin-classes/debug", "build/tmp/kotlin-classes/debugUnitTest") + configurations.getByName("debugUnitTestRuntimeClasspath")
-    mainClass.set("com.ctfly.app.TourMeshBaker")
-    args(file("src/main/assets/tour").absolutePath)
-}

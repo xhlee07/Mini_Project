@@ -8,6 +8,15 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ctfly.app.data.ClubGateway
+import com.ctfly.app.data.CtflyApi
+import com.ctfly.app.data.SessionVault
+import com.ctfly.app.data.obj
+import com.ctfly.app.data.rows
+import com.ctfly.app.data.text
+import com.ctfly.app.state.AppViewModel
+import com.ctfly.app.ui.payment.createReceiptPdf
+import com.ctfly.app.ui.payment.receiptLines
 import java.io.File
 import java.time.Instant
 import org.json.JSONObject
@@ -88,18 +97,18 @@ class RevisionStateTest {
     }
     @Test fun nativeReceiptPdfRendersUnicodeAndContainsFullSessionDetails() {
         launch()
-        val bill=obj("id" to "demo-2026-001","kind" to "Booking","status" to "Paid","created_at" to "2026-10-11T02:35:00Z","environment" to "test","method" to "Test TNG","payment_reference" to "TEST-DEMO-RECEIPT","subtotal" to 1200,"discount" to 300,"total" to 900,"points" to 9,"details" to obj("customer_name" to "Student 李明","activity" to "Racing simulator","resource" to "VIP Racing Simulator 01","zone" to "VIP","starts_at" to "2026-10-12T04:00:00Z","ends_at" to "2026-10-12T05:30:00Z","duration_minutes" to 90,"players" to 1,"hourly_rate" to 800,"promo_code" to "SCHOOL25"))
+        val bill=obj("id" to "demo-2026-001","kind" to "Booking","status" to "Paid","created_at" to "2026-10-11T02:35:00Z","environment" to "test","method" to "Test TNG","payment_reference" to "TEST-DEMO-RECEIPT","subtotal" to 1200,"discount" to 300,"total" to 900,"points" to 9,"details" to obj("customer_name" to "Student Άννα","activity" to "Racing simulator","resource" to "VIP Racing Simulator 01","zone" to "VIP","starts_at" to "2026-10-12T04:00:00Z","ends_at" to "2026-10-12T05:30:00Z","duration_minutes" to 90,"players" to 1,"hourly_rate" to 800,"promo_code" to "SCHOOL25"))
         change{it.set("receipt",bill.toString());it.set("dialog","receipt")}
         compose.onNodeWithText("90 minutes").assertIsDisplayed()
         compose.onNodeWithText("12 Oct 2026").assertIsDisplayed()
         compose.onNodeWithText("12:00 PM - 1:30 PM").assertIsDisplayed()
         compose.onNodeWithText("RM 9.00").assertIsDisplayed()
-        compose.onNodeWithText("Customer: Student 李明").assertDoesNotExist()
+        compose.onNodeWithText("Customer: Student Άννα").assertDoesNotExist()
         compose.onNodeWithText("Reference: TEST-DEMO-RECEIPT").assertDoesNotExist()
         compose.onNodeWithText("Subtotal: RM 12.00").assertDoesNotExist()
         capture("receipt-app-details")
         compose.onNodeWithText("Share PDF receipt").performScrollTo().assertIsDisplayed()
-        val lines=receiptLines(bill);assertTrue(lines.any{it.contains("Student 李明")});assertTrue(lines.contains("TOTAL: RM 9.00"))
+        val lines=receiptLines(bill);assertTrue(lines.any{it.contains("Student Άννα")});assertTrue(lines.contains("TOTAL: RM 9.00"))
         val file=createReceiptPdf(app,bill);assertTrue(file.length()>1000)
         val dir=File(app.getExternalFilesDir(null),"revision").apply{mkdirs()};file.copyTo(File(dir,"receipt-native.pdf"),true)
         PdfRenderer(ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY)).use{renderer->assertTrue(renderer.pageCount>=1);renderer.openPage(0).use{page->val b=Bitmap.createBitmap(page.width*3,page.height*3,Bitmap.Config.ARGB_8888);page.render(b,null,null,PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);File(dir,"receipt-native.png").outputStream().use{b.compress(Bitmap.CompressFormat.PNG,100,it)}}}

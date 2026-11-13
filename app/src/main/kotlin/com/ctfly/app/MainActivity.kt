@@ -12,6 +12,10 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ctfly.app.state.AppPreferences
+import com.ctfly.app.state.AppViewModel
+import com.ctfly.app.ui.common.CtflyTheme
+import com.ctfly.app.ui.navigation.CtflyApp
 
 class MainActivity : FragmentActivity() {
     private val vm
@@ -57,8 +61,9 @@ class MainActivity : FragmentActivity() {
             val state: AppViewModel = viewModel()
             val request = state.biometricRequest
             LaunchedEffect(request) {
-                if (request == null) fingerprintPrompt.cancelAuthentication()
-                if (request != null && !request.started) {
+                if (request == null) {
+                    fingerprintPrompt.cancelAuthentication()
+                } else if (!request.started) {
                     request.started = true
                     try {
                         fingerprintPrompt.authenticate(
@@ -113,15 +118,15 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun handlePickupIntent(intent: Intent?) {
-        if (BuildConfig.STAFF_APP) return
-        val owner = intent?.getStringExtra("pickup_user").orEmpty()
-        val order = intent?.getStringExtra("pickup_order").orEmpty()
+        if (BuildConfig.STAFF_APP || intent == null) return
+        val owner = intent.getStringExtra("pickup_user").orEmpty()
+        val order = intent.getStringExtra("pickup_order").orEmpty()
         if (owner.isNotBlank() && order.isNotBlank()) {
             val vm = ViewModelProvider(this)[AppViewModel::class.java]
             vm.openOrderFromNotification(owner, order)
             vm.refresh(silent = true)
-            intent?.removeExtra("pickup_user")
-            intent?.removeExtra("pickup_order")
+            intent.removeExtra("pickup_user")
+            intent.removeExtra("pickup_order")
         }
     }
 }

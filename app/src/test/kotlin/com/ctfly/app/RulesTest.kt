@@ -1,5 +1,9 @@
 package com.ctfly.app
 
+import com.ctfly.app.domain.adult
+import com.ctfly.app.domain.bookingPrice
+import com.ctfly.app.domain.money
+import com.ctfly.app.domain.tier
 import java.time.LocalDate
 import org.junit.Assert.*
 import org.junit.Test
