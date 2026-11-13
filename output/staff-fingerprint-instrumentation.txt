@@ -1,0 +1,28 @@
+INSTRUMENTATION_STATUS: class=com.ctfly.app.StaffBiometricStateTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=
+com.ctfly.app.StaffBiometricStateTest:
+INSTRUMENTATION_STATUS: test=optInAndCryptographicUnlock
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.ctfly.app.StaffBiometricStateTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=optInAndCryptographicUnlock
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=
+
+Time: 21.15
+
+OK (1 test)
+
+
+INSTRUMENTATION_CODE: -1
+
+--------- beginning of main
+I/StaffBiometricTest( 5594): WAIT_ENABLE_TOUCH
+I/StaffBiometricTest( 5594): WAIT_POST_SIGNOUT_TOUCH
+I/StaffBiometricTest( 5594): WAIT_UNLOCK_TOUCH

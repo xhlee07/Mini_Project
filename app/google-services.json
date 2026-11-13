@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "691646171803",
+    "project_id": "ctfly-c1b85",
+    "storage_bucket": "ctfly-c1b85.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:691646171803:android:b2e764c39d69027804943e",
+        "android_client_info": {
+          "package_name": "com.ctfly.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAl-EpdV_Uj729WLoCKC-pg5WHM2Q-B4rE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

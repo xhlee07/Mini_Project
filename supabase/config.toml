@@ -1,0 +1,7 @@
+[functions.order-notifications]
+# The endpoint validates the private worker secret through a service-role-only RPC.
+verify_jwt = false
+
+[functions.staff-device-auth]
+# Login is authenticated by a one-time signed challenge; management verifies a user JWT.
+verify_jwt = false
