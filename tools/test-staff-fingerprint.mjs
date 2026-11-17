@@ -1,6 +1,6 @@
 // Runs the real Android biometric integration test and injects emulator finger touches.
 import { spawn, execFileSync } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 const adb = 'C:/Users/User/AppData/Local/Android/Sdk/platform-tools/adb.exe';
 const target = ['-s', process.env.ANDROID_SERIAL || 'emulator-5554'];
 execFileSync(adb,[...target,'logcat','-c']);
@@ -29,5 +29,7 @@ test.stderr.on('data',chunk=>{result+=chunk;process.stderr.write(chunk);});
 const timeout=setTimeout(()=>{test.kill();log.kill();},180000);
 const code=await new Promise(resolve=>test.on('exit',resolve));
 clearTimeout(timeout);clearInterval(touches);log.kill();
-await writeFile(new URL('../output/staff-fingerprint-instrumentation.txt',import.meta.url),result+'\n'+logText);
+const artifactDirectory = new URL('../build/test-results/staff-fingerprint/', import.meta.url);
+await mkdir(artifactDirectory, { recursive: true });
+await writeFile(new URL('staff-fingerprint-instrumentation.txt', artifactDirectory), result+'\n'+logText);
 if(code!==0||!/OK \(1 test\)/.test(result)||seen.size!==3) process.exitCode=1;

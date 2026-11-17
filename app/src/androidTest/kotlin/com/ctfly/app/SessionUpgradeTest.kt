@@ -4,10 +4,10 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
-import com.ctfly.app.data.CtflyApi
-import com.ctfly.app.data.SessionVault
-import com.ctfly.app.data.obj
-import com.ctfly.app.data.text
+import com.ctfly.app.database.local.SessionVault
+import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.supabase.CtflyApi
+import com.ctfly.app.database.remote.text
 import org.json.JSONObject
 import org.junit.*
 import org.junit.Assert.*

@@ -69,10 +69,17 @@ export async function handler(req: Request): Promise<Response> {
       const userResponse = await fetch(base + '/auth/v1/user', { headers: { apikey: anon, Authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(15000) });
       if (!userResponse.ok) throw new Rejection('Please sign in again.', 401);
       const user = await userResponse.json();
-      if (body.operation === 'register' && !(await verify(body.public_key, body.signature, `ctfly-enroll:${user.id}:${device}`))) throw new Rejection('Fingerprint verification failed.', 403);
+      if (!uuid(user?.id)) throw new Rejection('Please sign in again.', 401);
+      if (body.operation === 'register') {
+        if (!(await verify(body.public_key, body.signature, `ctfly-enroll:${user.id}:${device}`))) throw new Rejection('Fingerprint verification failed.', 403);
+        return json(await request('/rest/v1/rpc/ctfly_register_staff_device', {
+          p_owner: user.id,
+          p_data: { device_id: device, staff_name: body.staff_name, device_name: body.device_name, public_key: body.public_key },
+        }, admin));
+      }
       return json(await request('/rest/v1/rpc/ctfly_staff_devices', {
         p_operation: body.operation,
-        p_data: { device_id: device, staff_name: body.staff_name, device_name: body.device_name, public_key: body.public_key },
+        p_data: { device_id: device },
       }, anon, token));
     }
     const auth = (operation: string) => request('/rest/v1/rpc/ctfly_staff_device_auth', { p_operation: operation, p_device: device, p_challenge: body.challenge_id ?? null }, admin);

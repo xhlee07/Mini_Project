@@ -22,7 +22,7 @@ async function dispatch(secret:string){
    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(job.email))throw Error('Recipient unavailable');
    // A receipt is sent only when its detailed PDF is ready; generation failures can be retried.
    const pdf=await receiptPdf(job.bill);
-   const subject=(job.bill.environment==='test'?'TEST ':'')+'CTFLY receipt '+receiptNumber(job.bill);
+   const subject='CTFLY receipt '+receiptNumber(job.bill);
    const html=receiptHtml(job.bill),text=receiptLines(job.bill).join('\n');let providerId='';
    if(useResend){
     sending=true;

@@ -85,22 +85,32 @@ export function receiptSections(b: Bill): ReceiptSection[] {
       value: money(Number(d.hourly_rate)) + " / hour",
     });
   }
-  const payment: ReceiptRow[] = [{ label: "Method", value: b.method }];
+  const methodLabels: Record<string, string> = {
+    TNG: "Touch ’n Go eWallet",
+    FPX: "Online banking (FPX)",
+    Card: "Debit / credit card",
+  };
+  const payment: ReceiptRow[] = [{
+    label: "Method",
+    value: methodLabels[b.method.replace(/^Test /, "")] ?? b.method,
+  }];
   if (b.payment_reference) {
-    payment.push({ label: "Reference", value: b.payment_reference });
+    payment.push({ label: "Reference", value: b.payment_reference.replace(/^TEST-/, "CTFLY-") });
   }
   payment.push({
     label: b.status === "Void"
       ? "Points reversed"
       : b.environment === "test"
-      ? "Demo points"
+      ? "Checkout points"
       : "Points earned",
     value: String(b.points),
   });
   if (b.status === "Void") {
     payment.push({
       label: "Void reason",
-      value: b.void_reason || "Contact CTFLY for details.",
+      value: b.void_reason === "Simulated refund. No real money moved."
+        ? "Payment refunded."
+        : b.void_reason || "Contact CTFLY for details.",
     });
   }
   return [{ title: "Receipt details", rows: overview }, {
@@ -122,10 +132,7 @@ export function receiptLines(b: Bill): string[] {
   const sections = receiptSections(b);
   const lines = ["CTFLY GAMING CAFE", "Malaysia / MYR", "Tel: " + receiptPhone];
   if (b.environment === "test") {
-    lines.push(
-      "TEST RECEIPT - NO MONEY CHARGED",
-      "School project payment simulation",
-    );
+    lines.push("No money was charged.");
   }
   for (const section of sections.slice(0, 2)) {
     lines.push(
@@ -226,7 +233,7 @@ export function receiptHtml(b: Bill, logoSrc = "cid:ctfly-logo"): string {
     escapeHtml(b.status.toUpperCase())
   }</span></td></tr></table>${
     b.environment === "test"
-      ? '<div style="background:#fff5de;color:#705321;font-size:11px;padding:10px 12px;margin:18px 0 12px"><strong>TEST RECEIPT - NO MONEY CHARGED</strong></div>'
+      ? '<div style="background:#fff5de;color:#705321;font-size:11px;padding:10px 12px;margin:18px 0 12px"><strong>No money was charged.</strong></div>'
       : ""
   }<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;margin-top:14px">${
     sections[0].rows.filter((r) => r.label !== "Status").map((r) =>
@@ -249,7 +256,7 @@ export function receiptHtml(b: Bill, logoSrc = "cid:ctfly-logo"): string {
     b.status === "Void"
       ? "VOIDED TOTAL"
       : b.environment === "test"
-      ? "TEST TOTAL"
+      ? "CHECKOUT TOTAL"
       : "TOTAL PAID"
   }</td><td style="padding:14px;color:#c6f56b;text-align:right;font-size:28px;font-weight:700;white-space:nowrap">${
     money(b.total)

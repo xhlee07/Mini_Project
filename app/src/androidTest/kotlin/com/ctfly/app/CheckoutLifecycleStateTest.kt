@@ -6,9 +6,9 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
-import com.ctfly.app.data.CtflyApi
-import com.ctfly.app.data.rows
-import com.ctfly.app.data.text
+import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.supabase.CtflyApi
+import com.ctfly.app.database.remote.text
 import com.ctfly.app.state.AppViewModel
 import java.io.File
 import org.json.JSONArray
@@ -170,8 +170,8 @@ class CheckoutLifecycleStateTest {
     @Test
     fun systemBackAfterStartingPaymentCancelsOnlyOnce() {
         openCheckout()
-        change { it.startTestPayment() }
-        compose.waitUntil(8000) { vm!!.currentTestPayment().text("status") == "Pending" }
+        change { it.startCheckoutPayment() }
+        compose.waitUntil(8000) { vm!!.currentCheckoutPayment().text("status") == "Pending" }
         inst.uiAutomation.executeShellCommand("input keyevent KEYCODE_BACK").close()
         assertCancelled()
         assertEquals(1, gateway.cancellationRequests.size)
@@ -182,11 +182,11 @@ class CheckoutLifecycleStateTest {
     @Test
     fun paidOrderAppearsAndLeavingDoesNotCancelIt() {
         openCheckout()
-        change { it.startTestPayment() }
-        compose.waitUntil(8000) { vm!!.currentTestPayment().text("status") == "Pending" }
-        change { it.resolveTestPayment("Success") }
+        change { it.startCheckoutPayment() }
+        compose.waitUntil(8000) { vm!!.currentCheckoutPayment().text("status") == "Pending" }
+        change { it.confirmCheckoutPayment() }
         compose.waitUntil(8000) {
-            vm!!.currentTestPayment().text("status") == "Succeeded" && !vm!!.busy
+            vm!!.currentCheckoutPayment().text("status") == "Succeeded" && !vm!!.busy
         }
         change { it.leaveCheckout() }
         compose.waitUntil(8000) { vm!!.field("page") == "Bookings" }
@@ -199,11 +199,11 @@ class CheckoutLifecycleStateTest {
     @Test
     fun leavingDuringConfirmationWaitsForSuccess() {
         openCheckout()
-        change { it.startTestPayment() }
-        compose.waitUntil(8000) { vm!!.currentTestPayment().text("status") == "Pending" }
+        change { it.startCheckoutPayment() }
+        compose.waitUntil(8000) { vm!!.currentCheckoutPayment().text("status") == "Pending" }
         gateway.confirmDelayMillis = 600
         change {
-            it.resolveTestPayment("Success")
+            it.confirmCheckoutPayment()
             it.leaveCheckout()
         }
         compose.waitUntil(8000) { vm!!.field("page") == "Bookings" && !vm!!.checkoutLeaving }
@@ -238,7 +238,7 @@ class CheckoutLifecycleStateTest {
                 "Unable to confirm cancellation. Check your connection and try leaving again."
             )
             .assertIsDisplayed()
-        compose.onNodeWithText("OK").performClick()
+        compose.onNodeWithContentDescription("Close").performClick()
         gateway.failCancellation = false
         change { it.leaveCheckout() }
         assertCancelled()

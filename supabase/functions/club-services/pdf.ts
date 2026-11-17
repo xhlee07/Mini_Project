@@ -169,9 +169,7 @@ export async function receiptPdf(b: Bill): Promise<Uint8Array> {
     25,
     true,
   );
-  const badge = b.environment === "test"
-    ? "TEST / " + b.status.toUpperCase()
-    : b.status.toUpperCase();
+  const badge = b.status.toUpperCase();
   const badgeWidth = Math.max(66, width(badge, 9, true) + 24);
   box(
     W - M - badgeWidth,
@@ -185,7 +183,7 @@ export async function receiptPdf(b: Bill): Promise<Uint8Array> {
   if (b.environment === "test") {
     box(M, y, C, 24, rgb(1, .96, .87));
     text(
-      "TEST RECEIPT - NO MONEY CHARGED",
+      "No money was charged.",
       M + 12,
       y + 7,
       9,
@@ -253,7 +251,7 @@ export async function receiptPdf(b: Bill): Promise<Uint8Array> {
     b.status === "Void"
       ? "VOIDED TOTAL"
       : b.environment === "test"
-      ? "TEST TOTAL"
+      ? "CHECKOUT TOTAL"
       : "TOTAL PAID",
     M + 15,
     y + 17,

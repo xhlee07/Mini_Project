@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {writeFile} from 'node:fs/promises';
 export async function verifyPayments({db,action,snapshot,customer,other,staff,admin}) {
  let n=0; const ok=(v,m)=>{assert.ok(v,m);n++};
  const reject=async(fn,re)=>{await assert.rejects(fn,re);n++};
@@ -16,24 +15,24 @@ export async function verifyPayments({db,action,snapshot,customer,other,staff,ad
  const oid=await order(),q=await action(player,'test_quote',{kind:'Order',id:oid});
  await reject(()=>action(other,'test_quote',{kind:'Order',id:oid}),/Already paid/);
  await reject(()=>action(staff,'test_quote',{kind:'Order',id:oid}),/customer account/);
- await reject(()=>action(player,'test_checkout',{kind:'Order',id:oid,method:'Real',expected_total:q.total}),/test payment method/);
+ await reject(()=>action(player,'test_checkout',{kind:'Order',id:oid,method:'Real',expected_total:q.total}),/Choose a payment method/);
  await reject(()=>action(player,'test_checkout',{kind:'Order',id:oid,method:'TNG',expected_total:q.total+1}),/Amount changed/);
  const p=await start(oid);
  ok((await start(oid,'Card')).id===p.id,'double checkout reuses active attempt');
  await reject(()=>action(other,'test_resolve',{id:p.id,outcome:'Success'}),/not found/);
- await reject(()=>action(player,'test_resolve',{id:p.id,outcome:'Other'}),/simulator outcome/);
+ await reject(()=>action(player,'test_resolve',{id:p.id,outcome:'Other'}),/Invalid payment status/);
  ok((await action(player,'test_resolve',{id:p.id,outcome:'Pending'})).payment.status==='Processing');
  ok(!(await snapshot(player)).orders.find(o=>o.id===oid).paid,'processing cannot fulfill');
  const req=randomUUID();const paid=await action(player,'test_resolve',{id:p.id,outcome:'Success'},req);
  ok(paid.payment.status==='Succeeded'&&paid.receipt.environment==='test');
- ok(paid.receipt.payment_reference.startsWith('TEST-'));
+ ok(paid.receipt.payment_reference.startsWith('CTFLY-'));
  ok((await action(player,'test_resolve',{id:p.id,outcome:'Success'},req)).receipt.id===paid.receipt.id);
  ok((await action(player,'test_resolve',{id:p.id,outcome:'Success'})).receipt.id===paid.receipt.id);
  let state=await snapshot(player);
  ok(state.profile.points===before.points&&state.profile.spent===before.spent,'simulation must not credit real membership');
  ok(state.profile.test_points===p.points&&state.profile.test_spent===p.total);
  ok(state.bills.filter(b=>b.source_id===oid&&b.status==='Paid').length===1);
- await reject(()=>action(admin,'void_bill',{bill_id:paid.receipt.id,reason:'Test reason'}),/test refund/);
+ await reject(()=>action(admin,'void_bill',{bill_id:paid.receipt.id,reason:'Test reason'}),/Open payment details to request a refund/);
  ok((await action(staff,'test_refund',{id:p.id})).payment.status==='Refunded');
  ok((await action(player,'test_refund',{id:p.id})).payment.status==='Refunded','refund retry safe');
  state=await snapshot(player);ok(state.profile.test_points===0&&state.profile.test_spent===0);
@@ -105,8 +104,5 @@ export async function verifyPayments({db,action,snapshot,customer,other,staff,ad
  await raw('update profiles set active=false where id=$1',[player]);await reject(()=>action(player,'test_quote',{kind:'Order',id:fulfilled}),/active CTFLY/);
  await raw('update profiles set active=true where id=$1',[player]);
  await order();
- const fixture=new URL('../app/src/androidTest/assets/',import.meta.url);
- await writeFile(new URL('payment-customer.json',fixture),JSON.stringify(await snapshot(player)));
- await writeFile(new URL('payment-staff.json',fixture),JSON.stringify(await snapshot(staff)));
- console.log(`PASS: ${n} payment assertions/negative cases; no live provider or money movement.`);
+console.log(`PASS: ${n} payment assertions/negative cases; no live provider or money movement.`);
 }

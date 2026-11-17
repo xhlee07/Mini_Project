@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import { sqlSection } from './sql-section.mjs';
 import {randomUUID} from 'node:crypto';
 
 export async function verifyCafePickup({db,action,snapshot,customer,other,staff,admin}) {
   const raw = async(sql,args=[])=>{await db.exec('reset role');return db.query(sql,args)};
   await raw('select 1');
-  const migration = await readFile(new URL('../supabase/migrations/20261015173031_cafe_qr_pickup_notifications.sql',import.meta.url),'utf8');
+  const migration = sqlSection('cafe-pickup');
   await db.exec(migration);await db.exec(migration);
   const device = randomUUID(), token = 'fixture-device-token-long-enough';
   await action(customer,'register_push_device',{installation_id:device,token,language:'zh'});

@@ -20,8 +20,13 @@ const challenges=new Map<string,string>();
 globalThis.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
  const url=String(input), h=new Headers(init?.headers), b=init?.body?JSON.parse(String(init.body)):{};
  if(url.endsWith('/auth/v1/user'))return Response.json({id:owner},{status:h.get('Authorization')==='Bearer eyJ.staff'?200:401});
+ if(url.endsWith('/ctfly_register_staff_device')){
+  if(h.get('apikey')!=='sb_secret_fixture'||h.has('Authorization')||b.p_owner!==owner||b.p_data.device_id!==device||b.p_data.public_key!==publicKey)throw Error('Registration must use the verified owner and service key');
+  registered=true;
+  return Response.json({devices:[{id:device,staff_name:b.p_data.staff_name,device_name:'Test phone'}],limit:5});
+ }
  if(url.endsWith('/ctfly_staff_devices')){
-  if(b.p_operation==='register')registered=true;
+  if(b.p_operation==='register'||h.get('Authorization')!=='Bearer eyJ.staff')throw Error('Device management must use the user JWT');
   if(b.p_operation==='remove')registered=false;
   return Response.json({devices:registered?[{id:device,staff_name:b.p_data.staff_name??'Test staff',device_name:'Test phone'}]:[],limit:5});
  }
@@ -43,7 +48,7 @@ function check(value:unknown,label:string){if(!value)throw Error(label);}
 const registration={operation:'register',device_id:device,staff_name:'Jamie',device_name:'Phone',public_key:publicKey,signature:await sign(`ctfly-enroll:${owner}:${device}`)};
 check((await call(registration)).status===401,'Registration needs password-authenticated account');
 check((await call({...registration,signature:await sign('wrong')} ,'eyJ.staff')).status===403,'Registration needs the device private key');
-check((await call(registration,'eyJ.staff')).status===200,'Registration succeeds');
+check((await call({...registration,owner:crypto.randomUUID()},'eyJ.staff')).status===200,'Registration uses the authenticated owner');
 check((await call({operation:'list'})).status===401,'Device names are private');
 async function login(signatureMessage?:string){
  const c=await (await call({operation:'challenge',device_id:device})).json();

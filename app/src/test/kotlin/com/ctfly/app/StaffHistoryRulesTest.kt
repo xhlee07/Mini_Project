@@ -3,9 +3,9 @@ package com.ctfly.app
 import com.ctfly.app.domain.historyDateLabel
 import com.ctfly.app.domain.onStaffDay
 import com.ctfly.app.domain.venueDay
-import com.ctfly.app.ui.staff.StaffQrKind
-import com.ctfly.app.ui.staff.staffBackDestination
-import com.ctfly.app.ui.staff.staffQrKind
+import com.ctfly.app.ui.staff.navigation.staffBackDestination
+import com.ctfly.app.ui.staff.operations.StaffQrKind
+import com.ctfly.app.ui.staff.operations.staffQrKind
 import java.time.LocalDate
 import org.junit.Assert.*
 import org.junit.Test

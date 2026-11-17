@@ -1,5 +1,6 @@
 package com.ctfly.app
 
+import android.app.Instrumentation
 import android.content.pm.ActivityInfo
 import android.os.SystemClock
 import androidx.compose.ui.test.*
@@ -7,13 +8,13 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
-import com.ctfly.app.auth.StaffSession
-import com.ctfly.app.data.ApiFailure
-import com.ctfly.app.data.ClubGateway
-import com.ctfly.app.data.CtflyApi
-import com.ctfly.app.data.SessionVault
-import com.ctfly.app.data.obj
-import com.ctfly.app.data.text
+import com.ctfly.app.auth.session.StaffSession
+import com.ctfly.app.database.local.SessionVault
+import com.ctfly.app.database.remote.ApiFailure
+import com.ctfly.app.database.remote.ClubGateway
+import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.supabase.CtflyApi
+import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.SessionRules
 import com.ctfly.app.state.AppViewModel
 import java.io.IOException
@@ -294,6 +295,13 @@ class SessionStateTest {
         val reopened = CtflyApi(app) { _, _, _, _ -> throw IOException("Offline") }
         assertTrue(reopened.signedIn)
         assertEquals(fixture.toString(), reopened.cachedSnapshot.toString())
+    }
+
+    @Test
+    fun activityAndFirebaseUseTheSameSessionGateway() {
+        val application = Instrumentation.newApplication(CtflyApplication::class.java, app)
+            as CtflyApplication
+        assertSame(application.gatewayFactory(application), application.gatewayFactory(app))
     }
 
     @Test

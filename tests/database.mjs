@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import { btree_gist } from '@electric-sql/pglite/contrib/btree_gist';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { sqlSection } from './sql-section.mjs';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 const db = new PGlite({ extensions: { btree_gist } });
@@ -8,7 +8,7 @@ await db.exec(`create role anon; create role authenticated; create schema auth;
 create table auth.users(id uuid primary key, email text, raw_user_meta_data jsonb);
 create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
 grant usage on schema auth,public to authenticated,anon; grant execute on function auth.uid() to authenticated,anon;`);
-await db.exec(await readFile(new URL('../supabase/001_ctfly.sql',import.meta.url),'utf8'));
+await db.exec(sqlSection('base-schema'));
 const customer=randomUUID(), other=randomUUID(), staff=randomUUID(), admin=randomUUID();
 for(const [id,name] of [[customer,'Ryan Lee'],[other,'Other Player'],[staff,'Jamie Lim'],[admin,'Alex Tan']]) {
  await db.query(`insert into auth.users values($1,$2,$3)`,[id,name.replaceAll(' ','')+'@example.test',JSON.stringify({name,dob:'2000-01-01',role:'admin'})]);
@@ -94,7 +94,7 @@ assert.equal((await snapshot(customer)).bookings[0].status,'Completed');checks++
 // Build realistic, isolated UI fixtures; these are only packaged in the test APK.
 await db.exec('reset role');
 const beforeExpansion=(await db.query('select count(*)::int n from bookings')).rows[0].n;
-const campusSql=await readFile(new URL('../supabase/004_venue_campus.sql',import.meta.url),'utf8');
+const campusSql=sqlSection('venue-campus');
 await db.exec(campusSql);
 const targetCounts={PC:32,Pool:8,Snooker:4,Console:4,Racing:4,Arcade:6,GoKart:6};
 // The earlier admin CRUD test creates a custom console; it counts toward the target and is retained.
@@ -126,7 +126,7 @@ const roomStart=new Date(Date.now()+5*3600000).toISOString();
 const oldVipBooking=await action(other,'book',{resource_id:legacyVip,minutes:90,starts_at:roomStart,guests:1});
 await db.exec('reset role');
 const oldVipRow=(await db.query('select * from bookings where id=$1',[oldVipBooking.id])).rows[0];
-const roomsSql=await readFile(new URL('../supabase/005_private_rooms_simulators.sql',import.meta.url),'utf8');
+const roomsSql=sqlSection('private-rooms');
 await db.exec(roomsSql);
 const converted=(await db.query('select * from resources where id=$1',[legacyVip])).rows[0];
 assert.equal(converted.kind,'VIPRoom');assert.equal(converted.status,'Available');checks+=2;
@@ -144,6 +144,22 @@ for(const [zone,rate] of [['Standard',2000],['VIP',3500]]) {
 const upgradedCount=(await db.query('select count(*)::int n from resources')).rows[0].n;
 await db.exec(roomsSql);
 assert.equal((await db.query('select count(*)::int n from resources')).rows[0].n,upgradedCount);checks++;
+const readVenueSetup=async()=>({
+ resources:(await db.query('select * from resources order by id')).rows,
+ constraints:(await db.query("select conname,pg_get_constraintdef(oid) from pg_constraint where conrelid='public.resources'::regclass order by conname")).rows,
+ bookingFunction:(await db.query("select pg_get_functiondef('public.ctfly_action(text,jsonb,uuid)'::regprocedure) as definition")).rows[0].definition,
+});
+const upgradedVenue=await readVenueSetup();
+await db.exec(campusSql);
+assert.deepEqual(await readVenueSetup(),upgradedVenue,'running campus setup after the Private Room upgrade leaves resources, constraints and booking logic intact');checks++;
+// A retired room and a manager-added VIP PC must survive a repeat install.
+await db.query("update resources set status='Retired' where name='VIP Room Solo 03'");
+await db.query("insert into resources(name,kind,zone,description,rate,capacity) values('VIP Rig 99','PC','VIP','Manager-added PC',1300,1)");
+const managedVenue=await readVenueSetup();
+await db.exec(roomsSql);
+assert.deepEqual(await readVenueSetup(),managedVenue,'reapplying Private Room setup preserves retired rooms and manager-added equipment');checks++;
+await db.query("update resources set status='Available' where name='VIP Room Solo 03'");
+await db.query("delete from resources where name='VIP Rig 99'");
 await fails(()=>action(customer,'book',{resource_id:legacyVip,minutes:60,starts_at:roomStart,guests:1}),/overlaps/);
 await fails(()=>action(customer,'book',{resource_id:legacyVip,minutes:60,starts_at:roomStart,guests:2}),/group size/);
 await action(staff,'pay',{kind:'Booking',id:oldVipBooking.id});
@@ -180,7 +196,7 @@ await db.exec('reset role');await db.query('update profiles set points=180,spent
 await action(customer,'book',{resource_id:17,minutes:90,starts_at:new Date(Date.now()+7200000).toISOString(),guests:3});
 // Feedback is private to its author and visible to active staff/admin via validated RPCs.
 await db.exec('reset role');
-const feedbackSql=await readFile(new URL('../supabase/006_settings_feedback.sql',import.meta.url),'utf8');
+const feedbackSql=sqlSection('settings-feedback');
 await db.exec(feedbackSql);
 const feedbackRequest=randomUUID();
 const feedbackBody={title:'Bigger controls please',body:'The new kart pedals are much easier to use. Please keep them large.',category:'Suggestion',rating:4};
@@ -223,19 +239,21 @@ assert.equal((await snapshot(customer)).feedback.find(f=>f.id===submitted.id).st
 await db.exec('reset role');
 assert.equal((await db.query("select relrowsecurity from pg_class where relname='app_feedback'")).rows[0].relrowsecurity,true);checks++;
 await db.exec('reset role');
-await db.exec(await readFile(new URL('../supabase/migrations/20261011122341_test_checkout.sql',import.meta.url),'utf8'));
+await db.exec(sqlSection('online-checkout'));
 await (await import('./test-payments.mjs')).verifyPayments({db,action,snapshot,customer,other,staff,admin});
 await db.exec('reset role');
 await db.exec("create role service_role;");
-await db.exec(await readFile(new URL('../supabase/migrations/20261011141837_booking_events_receipts.sql',import.meta.url),'utf8'));
-await db.exec(await readFile(new URL('../supabase/migrations/20261011142842_receipt_worker_configuration.sql',import.meta.url),'utf8'));
+await db.exec(sqlSection('booking-events-receipts'));
+const receiptConfigurationSql=sqlSection('receipt-worker-configuration');
+await db.exec(receiptConfigurationSql);
+const mailSettings=(await db.query("select configured,worker_secret from private.mail_runtime where id=true")).rows;
+await db.exec(receiptConfigurationSql);
+assert.deepEqual((await db.query("select configured,worker_secret from private.mail_runtime where id=true")).rows,mailSettings,'reapplying receipt configuration preserves the worker settings');checks++;
 await (await import('./revision-tests.mjs')).verifyRevision({db,action,snapshot,customer,other,staff,admin});
 await (await import('./receipt-dispatch.mjs')).verifyReceiptDispatch({db,action,snapshot,customer});
 await (await import('./cafe-pickup.mjs')).verifyCafePickup({db,action,snapshot,customer,other,staff,admin});
 await (await import('./staff-history.mjs')).verifyStaffHistory({db,snapshot,customer,staff,admin});
 await (await import('./transaction-filters.mjs')).verifyTransactionFilters({db,customer,staff});
 await (await import('./checkout-lifecycle.mjs')).verifyCheckoutLifecycle({db,action,snapshot,customer,other});
-const fixtureDir=new URL('../app/src/androidTest/assets/',import.meta.url);await mkdir(fixtureDir,{recursive:true});
-for(const [name,id] of [['customer',customer],['staff',staff],['admin',admin]])await writeFile(new URL(name+'.json',fixtureDir),JSON.stringify(await snapshot(id)));
-console.log(`PASS: schema, transactions, ${checks} assertions/negative cases; UI fixtures exported. No cloud database was modified.`);
+console.log(`PASS: schema, transactions, ${checks} assertions/negative cases. No cloud database was modified.`);
 await db.close();

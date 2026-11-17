@@ -27,8 +27,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ctfly.app.BuildConfig
 import com.ctfly.app.R
-import com.ctfly.app.state.AppIcon
-import com.ctfly.app.state.AppText
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

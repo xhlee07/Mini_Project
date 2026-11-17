@@ -22,27 +22,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ctfly.app.BuildConfig
-import com.ctfly.app.data.obj
-import com.ctfly.app.data.rows
-import com.ctfly.app.data.text
+import com.ctfly.app.database.local.AppPreferences
+import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.dateLabel
-import com.ctfly.app.state.AppIcon
-import com.ctfly.app.state.AppPreferences
-import com.ctfly.app.state.AppText
 import com.ctfly.app.state.AppViewModel
-import com.ctfly.app.state.LocalAppPreferences
-import com.ctfly.app.state.tr
+import com.ctfly.app.ui.common.tr
+import com.ctfly.app.ui.auth.StaffSecuritySettings
+import com.ctfly.app.ui.common.AppIcon
+import com.ctfly.app.ui.common.AppText
 import com.ctfly.app.ui.common.Aqua
 import com.ctfly.app.ui.common.Chip
 import com.ctfly.app.ui.common.Ink
 import com.ctfly.app.ui.common.Input
 import com.ctfly.app.ui.common.Lime
+import com.ctfly.app.ui.common.LocalAppPreferences
 import com.ctfly.app.ui.common.Muted
 import com.ctfly.app.ui.common.Orange
 import com.ctfly.app.ui.common.SectionTitle
 import com.ctfly.app.ui.common.Select
 import com.ctfly.app.ui.common.SurfaceCard
-import com.ctfly.app.ui.customer.StaffSecuritySettings
 import org.json.JSONObject
 
 fun AppViewModel.openSettings() {

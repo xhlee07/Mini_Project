@@ -10,14 +10,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
-import com.ctfly.app.auth.StaffSession
-import com.ctfly.app.data.ClubGateway
-import com.ctfly.app.data.CtflyApi
-import com.ctfly.app.data.obj
-import com.ctfly.app.data.rows
-import com.ctfly.app.data.text
+import com.ctfly.app.auth.session.StaffSession
+import com.ctfly.app.database.local.AppPreferences
+import com.ctfly.app.database.remote.ClubGateway
+import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.supabase.CtflyApi
+import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.onStaffDay
-import com.ctfly.app.state.AppPreferences
 import com.ctfly.app.state.AppViewModel
 import com.ctfly.app.ui.common.CtflyTheme
 import com.ctfly.app.ui.common.DateFields
@@ -320,11 +320,16 @@ class AdaptiveStateTest {
         }
         capture("settings-staff-feedback-inbox")
         compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasTestTag("language-ms"))
         compose.onNodeWithTag("language-ms").performClick()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasTestTag("background-forest"))
         compose.onNodeWithTag("background-forest").performScrollTo().performClick()
+        compose.onNode(hasScrollToIndexAction())
+            .performScrollToNode(hasText("Buka peti maklum balas"))
         compose.onNodeWithText("Buka peti maklum balas").performScrollTo().performClick()
         compose.waitUntil(5000) {
-            compose.onAllNodesWithText("Baca maklum balas ahli kelab.").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText("Cadangan dan masalah daripada aplikasi.")
+                .fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("Maklum balas pelanggan").assertIsDisplayed()
         capture("settings-staff-malay-feedback")

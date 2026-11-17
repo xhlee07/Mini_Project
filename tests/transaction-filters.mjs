@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { sqlSection } from './sql-section.mjs';
 
 export async function verifyTransactionFilters({ db, customer, staff }) {
     await db.exec('reset role');
-    const sql = await readFile(new URL('../supabase/migrations/20261016113332_transaction_type_filter.sql', import.meta.url), 'utf8');
+    const sql = sqlSection('transaction-filters');
     await db.exec(sql);
     await db.exec(sql);
     const as = async id => {

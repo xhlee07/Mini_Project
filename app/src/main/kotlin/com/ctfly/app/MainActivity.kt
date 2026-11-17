@@ -12,10 +12,10 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ctfly.app.state.AppPreferences
+import com.ctfly.app.database.local.AppPreferences
+import com.ctfly.app.navigation.CtflyApp
 import com.ctfly.app.state.AppViewModel
 import com.ctfly.app.ui.common.CtflyTheme
-import com.ctfly.app.ui.navigation.CtflyApp
 
 class MainActivity : FragmentActivity() {
     private val vm

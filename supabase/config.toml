@@ -5,3 +5,7 @@ verify_jwt = false
 [functions.staff-device-auth]
 # Login is authenticated by a one-time signed challenge; management verifies a user JWT.
 verify_jwt = false
+
+[functions.club-services]
+# Receipt dispatch validates the private worker secret; poster uploads validate the user JWT.
+verify_jwt = false

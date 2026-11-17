@@ -25,10 +25,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ctfly.app.data.text
+import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.CafeZone
-import com.ctfly.app.state.AppIcon
-import com.ctfly.app.state.AppText
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

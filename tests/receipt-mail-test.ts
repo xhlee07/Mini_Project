@@ -61,7 +61,9 @@ for (
     "RM 3.00",
     "RM 9.00",
     "SCHOOL25",
-    "TEST RECEIPT - NO MONEY CHARGED",
+    "No money was charged.",
+    "Touch ’n Go eWallet",
+    "CTFLY-DEMO-RECEIPT",
   ]
 ) {
   if (!html.includes(value)) {

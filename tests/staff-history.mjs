@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { sqlSection } from './sql-section.mjs';
 import { randomUUID } from 'node:crypto';
 
 export async function verifyStaffHistory({ db, snapshot, customer, staff, admin }) {
- const sql=await readFile(new URL('../supabase/migrations/20261015190808_staff_activity_history.sql',import.meta.url),'utf8');
+ const sql=sqlSection('staff-history');
  await db.exec('reset role');await db.exec(sql);await db.exec(sql);
  const as=async id=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);await db.exec('set role authenticated');};
  const query=async(id,module,day=null,category='All',search='',before=null,key=null)=>{

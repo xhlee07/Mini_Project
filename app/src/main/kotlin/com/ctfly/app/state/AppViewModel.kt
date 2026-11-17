@@ -11,17 +11,18 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.ctfly.app.BuildConfig
 import com.ctfly.app.CtflyApplication
-import com.ctfly.app.auth.StaffBiometricRequest
-import com.ctfly.app.auth.StaffBiometrics
-import com.ctfly.app.auth.StaffSessionGateway
-import com.ctfly.app.data.ApiFailure
-import com.ctfly.app.data.obj
-import com.ctfly.app.data.rows
-import com.ctfly.app.data.text
+import com.ctfly.app.auth.biometrics.StaffBiometricRequest
+import com.ctfly.app.auth.biometrics.StaffBiometrics
+import com.ctfly.app.auth.session.StaffSessionGateway
+import com.ctfly.app.database.remote.ApiFailure
+import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.adult
+import com.ctfly.app.domain.payment.paymentMessageLabel
 import com.ctfly.app.notifications.PickupNotifications
-import com.ctfly.app.ui.customer.openCafeOrders
-import com.ctfly.app.ui.customer.openPickup
+import com.ctfly.app.ui.customer.cafe.openCafeOrders
+import com.ctfly.app.ui.customer.cafe.openPickup
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -118,12 +119,12 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
     var checkoutLeaving by mutableStateOf(false)
         private set
 
-    val testPaymentsEnabled
+    val onlineCheckoutAvailable
         get() = data.text("payment_mode") == BuildConfig.PAYMENT_MODE
 
     fun openCheckout(kind: String, id: String) {
-        if (!testPaymentsEnabled) {
-            notify("Test checkout setup is not available. Refresh and try again.")
+        if (!onlineCheckoutAvailable) {
+            notify("Checkout is unavailable. Refresh and try again.")
             return
         }
         set("checkoutReturn", if (crew) "Transactions" else "Bookings")
@@ -136,11 +137,17 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
         set("checkoutAppliedCode", "")
         set("checkoutCancelRequest", "")
         message = ""
+        clearValidationError()
         set("page", "Checkout")
         reloadCheckout()
     }
 
     fun resumeCheckout(payment: JSONObject) {
+        checkoutJob?.cancel()
+        checkoutQuote = JSONObject()
+        checkoutError = ""
+        message = ""
+        clearValidationError()
         set("checkoutReturn", if (crew) "Transactions" else "Bookings")
         set("checkoutKind", payment.text("kind"))
         set("checkoutSource", payment.text("source_id"))
@@ -149,7 +156,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
         set("page", "Checkout")
     }
 
-    fun currentTestPayment(): JSONObject {
+    fun currentCheckoutPayment(): JSONObject {
         val id = field("checkoutPayment")
         if (id.isBlank()) return JSONObject()
         return rows("test_payments").find { it.text("id") == id }
@@ -194,7 +201,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                     if (crew || kind != "Order" || source.isBlank()) {
                         finishCheckoutExit(false)
                     } else {
-                        val payment = currentTestPayment()
+                        val payment = currentCheckoutPayment()
                         val order = rows("orders").find { it.text("id") == source }
                         if (
                             order?.optBoolean("paid") == true ||
@@ -241,7 +248,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                                 val latest = rows("orders").find { it.text("id") == source }
                                 when {
                                     latest?.optBoolean("paid") == true ||
-                                        currentTestPayment().text("status") in
+                                        currentCheckoutPayment().text("status") in
                                             listOf("Succeeded", "Refunded") ->
                                         finishCheckoutExit(false)
                                     latest?.text("status") == "Cancelled" ->
@@ -266,6 +273,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
         checkoutJob?.cancel()
         checkoutQuote = JSONObject()
         checkoutError = ""
+        clearValidationError()
         val cafe = !crew && field("checkoutKind") == "Order"
         val destination = if (cafe) "Bookings" else field("checkoutReturn", "Bookings")
         if (cafe) set("bookingTab", "Orders")
@@ -281,7 +289,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
         set("page", destination)
     }
 
-    fun canRefundTestPayment(payment: JSONObject): Boolean {
+    fun canRefundCheckoutPayment(payment: JSONObject): Boolean {
         if (payment.text("status") != "Succeeded") return false
         val id = payment.text("source_id")
         return when (payment.text("kind")) {
@@ -344,7 +352,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                             ),
                         )
                     require(q.text("provider") == "simulator" && q.text("environment") == "test") {
-                        "Test checkout setup is not available. Refresh and try again."
+                        "Checkout is unavailable. Refresh and try again."
                     }
                     if (
                         generation == accountGeneration &&
@@ -355,12 +363,12 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     if (generation == accountGeneration && field("checkoutSource") == id)
-                        checkoutError = e.message ?: "Unable to load checkout."
+                        checkoutError = paymentMessageLabel(e.message ?: "Unable to load checkout.")
                 }
             }
     }
 
-    private fun acceptTestResult(result: JSONObject) {
+    private fun acceptCheckoutPayment(result: JSONObject) {
         result.optJSONObject("payment")?.let {
             result.optJSONObject("receipt")?.let { receipt -> it.put("receipt", receipt) }
             set("checkoutPayment", it.text("id"))
@@ -374,7 +382,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
         }
     }
 
-    fun startTestPayment() {
+    fun startCheckoutPayment() {
         if (checkoutLeaving) return
         action(
             "test_checkout",
@@ -385,28 +393,34 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                 "expected_total" to checkoutQuote.optInt("total", -1),
                 "promo_code" to field("checkoutAppliedCode"),
             ),
-            onResult = ::acceptTestResult,
+            onResult = ::acceptCheckoutPayment,
         )
     }
 
-    fun resolveTestPayment(outcome: String) {
-        if (checkoutLeaving) return
-        if (outcome == "Cancel" && field("checkoutKind") == "Order") {
+    fun confirmCheckoutPayment() = resolveCheckoutPayment("Success")
+
+    fun cancelCheckoutPayment() {
+        if (field("checkoutKind") == "Order") {
             leaveCheckout()
-            return
+        } else {
+            resolveCheckoutPayment("Cancel")
         }
+    }
+
+    private fun resolveCheckoutPayment(outcome: String) {
+        if (checkoutLeaving) return
         action(
             "test_resolve",
             obj("id" to field("checkoutPayment"), "outcome" to outcome),
-            onResult = ::acceptTestResult,
+            onResult = ::acceptCheckoutPayment,
         )
     }
 
-    fun refundTestPayment() =
+    fun refundCheckoutPayment() =
         action(
             "test_refund",
             obj("id" to field("checkoutPayment")),
-            onResult = ::acceptTestResult,
+            onResult = ::acceptCheckoutPayment,
         ) {
             set("dialog", "")
         }
@@ -882,7 +896,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                                 e.code in listOf("invalid_credentials", "invalid_login_credentials")
                         )
                             "Email or password is incorrect."
-                        else e.message ?: "Something went wrong. Please try again."
+                        else paymentMessageLabel(e.message ?: "Something went wrong. Please try again.")
                     )
                 } finally {
                     if (operation == operationSequence) busy = false
@@ -967,6 +981,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                 offerFingerprint = false
             }
         }
+        set("page", if (actualRole in listOf("staff", "admin")) "Operations" else "Discover")
         acceptSnapshot(fresh)
         hasAccount = true
         loadError = ""
@@ -975,7 +990,6 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
         set("authMode", "login")
         if (BuildConfig.STAFF_APP) set("email", "")
         set("explore", "false")
-        set("page", if (actualRole in listOf("staff", "admin")) "Operations" else "Discover")
     }
 
     fun resend() = run {
@@ -1115,7 +1129,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
             set("pendingRequest", "")
             message =
                 if (name.startsWith("test_") || name == "order") ""
-                else result.text("message", "Saved")
+                else paymentMessageLabel(result.text("message", "Saved"))
             onSuccess()
             onResult(result)
             try {
@@ -1145,7 +1159,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
     }
 
     fun checkout() {
-        if (!testPaymentsEnabled) {
+        if (!onlineCheckoutAvailable) {
             invalid("Checkout is unavailable. Refresh and try again.")
             return
         }
@@ -1159,7 +1173,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                 "booking_id" to "",
             ),
             onResult = {
-                if (testPaymentsEnabled && it.text("id").isNotBlank())
+                if (onlineCheckoutAvailable && it.text("id").isNotBlank())
                     openCheckout("Order", it.text("id"))
             },
         ) {

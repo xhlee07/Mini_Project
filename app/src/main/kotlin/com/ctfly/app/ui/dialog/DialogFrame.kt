@@ -20,13 +20,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.qrcode.QRCodeWriter
-import com.ctfly.app.state.AppIcon
-import com.ctfly.app.state.AppText
 import com.ctfly.app.state.AppViewModel
+import com.ctfly.app.ui.common.AppIcon
+import com.ctfly.app.ui.common.AppText
 import com.ctfly.app.ui.common.Orange
 import com.ctfly.app.ui.common.Panel
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime

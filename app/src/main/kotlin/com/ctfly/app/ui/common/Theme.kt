@@ -26,11 +26,8 @@ import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ctfly.app.BuildConfig
-import com.ctfly.app.data.text
-import com.ctfly.app.state.AppPreferences
-import com.ctfly.app.state.AppStrings
-import com.ctfly.app.state.LocalAppLanguage
-import com.ctfly.app.state.LocalAppPreferences
+import com.ctfly.app.database.local.AppPreferences
+import com.ctfly.app.database.remote.text
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

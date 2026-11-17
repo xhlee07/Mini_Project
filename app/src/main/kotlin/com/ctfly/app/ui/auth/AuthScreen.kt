@@ -30,8 +30,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.repeatOnLifecycle
 import com.ctfly.app.BuildConfig
-import com.ctfly.app.state.AppText
 import com.ctfly.app.state.AppViewModel
+import com.ctfly.app.ui.common.AppText
 import com.ctfly.app.ui.common.Aqua
 import com.ctfly.app.ui.common.Brand
 import com.ctfly.app.ui.common.DateFields
@@ -42,7 +42,6 @@ import com.ctfly.app.ui.common.Lime
 import com.ctfly.app.ui.common.Muted
 import com.ctfly.app.ui.common.Orange
 import com.ctfly.app.ui.common.Photo
-import com.ctfly.app.ui.customer.StaffFingerprintSignIn
 import java.time.Instant
 import kotlinx.coroutines.delay
 import org.json.JSONObject

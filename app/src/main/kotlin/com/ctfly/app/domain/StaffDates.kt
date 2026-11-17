@@ -21,10 +21,10 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ctfly.app.data.text
-import com.ctfly.app.state.AppIcon
-import com.ctfly.app.state.AppText
+import com.ctfly.app.database.remote.text
 import com.ctfly.app.state.AppViewModel
+import com.ctfly.app.ui.common.AppIcon
+import com.ctfly.app.ui.common.AppText
 import com.ctfly.app.ui.common.Input
 import com.ctfly.app.ui.common.Muted
 import java.time.Instant

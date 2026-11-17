@@ -20,18 +20,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.qrcode.QRCodeWriter
-import com.ctfly.app.data.obj
-import com.ctfly.app.data.rows
-import com.ctfly.app.data.text
+import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.CafeZone
 import com.ctfly.app.domain.VenueDirectory
 import com.ctfly.app.domain.bookingInputError
 import com.ctfly.app.domain.bookingPrice
 import com.ctfly.app.domain.money
-import com.ctfly.app.state.AppText
 import com.ctfly.app.state.AppViewModel
+import com.ctfly.app.ui.common.AppText
 import com.ctfly.app.ui.common.Aqua
 import com.ctfly.app.ui.common.DateFields
 import com.ctfly.app.ui.common.EmptyState
@@ -40,12 +38,14 @@ import com.ctfly.app.ui.common.Lime
 import com.ctfly.app.ui.common.Muted
 import com.ctfly.app.ui.common.Orange
 import com.ctfly.app.ui.common.Select
-import com.ctfly.app.ui.customer.PickupQrContent
-import com.ctfly.app.ui.payment.ReceiptContent
-import com.ctfly.app.ui.staff.StaffPickupContent
-import com.ctfly.app.ui.staff.StaffQrKind
-import com.ctfly.app.ui.staff.confirmStaffCode
-import com.ctfly.app.ui.staff.staffQrKind
+import com.ctfly.app.ui.customer.cafe.PickupQrContent
+import com.ctfly.app.ui.payment.receipt.ReceiptContent
+import com.ctfly.app.ui.staff.operations.StaffPickupContent
+import com.ctfly.app.ui.staff.operations.StaffQrKind
+import com.ctfly.app.ui.staff.operations.confirmStaffCode
+import com.ctfly.app.ui.staff.operations.staffQrKind
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -109,7 +109,7 @@ fun AppDialogs(vm: AppViewModel) {
                             fontSize = 12.sp,
                         )
                     AppText(
-                        "Complete test checkout within 10 minutes. No real money will be charged. Arriving late does not extend your end time.",
+                        "Complete payment within 10 minutes. Your session still ends at the scheduled time.",
                         color = Muted,
                         fontSize = 12.sp,
                     )
@@ -142,7 +142,7 @@ fun AppDialogs(vm: AppViewModel) {
                                     "guests" to guests,
                                 ),
                                 onResult = {
-                                    if (vm.testPaymentsEnabled && it.text("id").isNotBlank())
+                                    if (vm.onlineCheckoutAvailable && it.text("id").isNotBlank())
                                         vm.openCheckout("Booking", it.text("id"))
                                 },
                             ) {
@@ -194,7 +194,7 @@ fun AppDialogs(vm: AppViewModel) {
                     )
                     AppText("Total ${money(total)}", fontSize = 25.sp, fontWeight = FontWeight.Bold)
                     AppText(
-                        "Complete test checkout within 10 minutes. Unpaid orders will not be prepared.",
+                        "Complete payment within 10 minutes. The café starts preparing your order after confirmation.",
                         color = Muted,
                         fontSize = 12.sp,
                     )
@@ -226,7 +226,7 @@ fun AppDialogs(vm: AppViewModel) {
                                 "team" to vm.field("teamName"),
                             ),
                             onResult = {
-                                if (vm.testPaymentsEnabled && it.text("id").isNotBlank())
+                                if (vm.onlineCheckoutAvailable && it.text("id").isNotBlank())
                                     vm.openCheckout("Event", it.text("id"))
                             },
                         ) {
@@ -328,21 +328,21 @@ fun AppDialogs(vm: AppViewModel) {
                 }
             }
         "receipt" -> DialogFrame("Payment receipt", vm) { ReceiptContent(vm) }
-        "testRefund" ->
-            DialogFrame("Request test refund", vm) {
+        "checkoutRefund" ->
+            DialogFrame("Request refund", vm) {
                 AppText(
-                    "This simulates a refund and releases an unused booking or order. No real money will move."
+                    "Confirming a refund cancels the service and reverses the checkout points."
                 )
                 AppText(
                     "Services already started or prepared cannot be refunded here.",
                     color = Muted,
                 )
                 Button(
-                    onClick = { vm.refundTestPayment() },
+                    onClick = { vm.refundCheckoutPayment() },
                     enabled = !vm.busy,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    AppText("Confirm test refund")
+                    AppText("Confirm refund")
                 }
             }
         "form" -> EditorDialog(vm)

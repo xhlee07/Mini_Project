@@ -550,71 +550,62 @@ Enter a whole number for {0}.	Masukkan nombor bulat untuk {0}.
 
 
 
-TEST MODE · NO MONEY CHARGED	MOD UJIAN · TIADA CAJ WANG
-TNG, online banking and cards are simulated. Do not enter real payment details.	TNG, perbankan dalam talian dan kad disimulasikan. Jangan masukkan maklumat pembayaran sebenar.
-Pay in test mode	Bayar dalam mod ujian
+No money will be charged.	Tiada wang akan dicaj.
+No money was charged.	Tiada wang dicaj.
+Pay now	Bayar sekarang
 Checkout hold: %s	Tempoh pegangan: %s
-Test checkout	Daftar keluar ujian
+Checkout	Pembayaran
 Awaiting payment	Menunggu pembayaran
-Demo points: %s	Mata demo: %s
+Checkout points: %s	Mata pembayaran: %s
 Subtotal	Subjumlah
 Member discount	Diskaun ahli
 Total	Jumlah
-Reload checkout	Muat semula daftar keluar
-Choose a test payment method	Pilih kaedah pembayaran ujian
-Touch ’n Go eWallet · test	Touch ’n Go eWallet · ujian
-Online banking (FPX) · test	Perbankan dalam talian (FPX) · ujian
-Debit / credit card · test	Kad debit / kredit · ujian
-Continue to test payment	Teruskan pembayaran ujian
-%s simulator	Simulator %s
-Confirm a simulated payment. Your wallet, bank and card will not be charged.	Sahkan pembayaran simulasi. Dompet, bank dan kad anda tidak akan dicaj.
-Still processing in the simulator. Complete or cancel this demo below.	Masih diproses dalam simulator. Lengkapkan atau batalkan demo di bawah.
-Confirm test payment	Sahkan pembayaran ujian
-Demo controls	Kawalan demo
-Simulate failure	Simulasikan kegagalan
-Simulate processing	Simulasikan pemprosesan
-Cancel test payment	Batalkan pembayaran ujian
-Test payment successful	Pembayaran ujian berjaya
-No money was charged. Your demo order is confirmed.	Tiada wang dicaj. Pesanan demo anda disahkan.
-Request test refund	Mohon bayaran balik ujian
-Test refund completed	Bayaran balik ujian selesai
-Test payment failed	Pembayaran ujian gagal
+Reload checkout	Muat semula pembayaran
+Payment method	Kaedah pembayaran
+Touch ’n Go eWallet	Touch ’n Go eWallet
+Online banking (FPX)	Perbankan dalam talian (FPX)
+Debit / credit card	Kad debit / kredit
+Review payment	Semak pembayaran
+Confirm payment · %s	Sahkan pembayaran · %s
+Cancel payment	Batalkan pembayaran
+Payment confirmed	Pembayaran disahkan
+Request refund	Mohon bayaran balik
+Refund completed	Bayaran balik selesai
+Payment unsuccessful	Pembayaran gagal
 Checkout hold expired	Tempoh pegangan tamat
-Test payment cancelled	Pembayaran ujian dibatalkan
-No real money moved.	Tiada wang sebenar dipindahkan.
-Retry test checkout	Cuba semula pembayaran ujian
+Payment cancelled	Pembayaran dibatalkan
+Try payment again	Cuba bayar semula
 Back to your plans	Kembali ke rancangan anda
-Test transactions	Transaksi ujian
-Resume test payment	Sambung pembayaran ujian
 Payment details	Butiran pembayaran
-No test transactions yet	Belum ada transaksi ujian
-Test payments will appear here.	Pembayaran ujian akan dipaparkan di sini.
+No payments yet	Belum ada pembayaran
+Your online payments will appear here.	Pembayaran dalam talian anda akan dipaparkan di sini.
 Payments	Pembayaran
-Test payment	Pembayaran ujian
+Online payment	Pembayaran dalam talian
 Complete payment within the checkout hold.	Lengkapkan pembayaran dalam tempoh pegangan.
-Complete test checkout within 10 minutes. No real money will be charged. Arriving late does not extend your end time.	Lengkapkan pembayaran ujian dalam 10 minit. Tiada wang sebenar dicaj. Ketibaan lewat tidak memanjangkan masa tamat.
-Complete test checkout within 10 minutes. Unpaid orders will not be prepared.	Lengkapkan pembayaran ujian dalam 10 minit. Pesanan belum dibayar tidak akan disediakan.
-This simulates a refund and releases an unused booking or order. No real money will move.	Ini mensimulasikan bayaran balik dan melepaskan tempahan atau pesanan yang belum digunakan. Tiada wang sebenar dipindahkan.
+Complete payment within 10 minutes. Your session still ends at the scheduled time.	Lengkapkan pembayaran dalam 10 minit. Sesi anda tetap tamat pada waktu yang dijadualkan.
+Complete payment within 10 minutes. The café starts preparing your order after confirmation.	Lengkapkan pembayaran dalam 10 minit. Kafe akan menyediakan pesanan anda selepas pembayaran disahkan.
+Confirming a refund cancels the service and reverses the checkout points.	Pengesahan bayaran balik membatalkan perkhidmatan dan menarik balik mata pembayaran.
 Services already started or prepared cannot be refunded here.	Perkhidmatan yang telah bermula atau disediakan tidak boleh dibayar balik di sini.
-Confirm test refund	Sahkan bayaran balik ujian
-Demo membership	Keahlian demo
-Demo points cannot be exchanged for real rewards.	Mata demo tidak boleh ditukar dengan ganjaran sebenar.
+Confirm refund	Sahkan bayaran balik
+Online checkout activity	Aktiviti pembayaran dalam talian
+Checkout points are recorded separately from member rewards.	Mata pembayaran direkodkan secara berasingan daripada ganjaran ahli.
 Processing	Sedang diproses
 Succeeded	Berjaya
 Failed	Gagal
 Expired	Tamat tempoh
 Refunded	Dibayar balik
-Test mode. No money will be charged.	Mod ujian. Tiada wang akan dicaj.
-Test mode. No money was charged.	Mod ujian. Tiada wang dicaj.
-Test payment already refunded.	Pembayaran ujian ini sudah dibayar balik.
 Already paid, cancelled or checkout hold expired.	Sudah dibayar, dibatalkan atau tempoh pegangan tamat. Semak status pesanan.
-Amount changed. Reload checkout.	Jumlah berubah. Muat semula daftar keluar.
-This service has already started or been fulfilled. Test refund unavailable.	Perkhidmatan telah bermula atau selesai. Bayaran balik ujian tidak tersedia.
-Test checkout setup is not available. Refresh and try again.	Pembayaran ujian belum tersedia. Muat semula dan cuba lagi.
-Registered. Complete test checkout.	Berdaftar. Lengkapkan pembayaran ujian.
+Amount changed. Reload checkout.	Jumlah berubah. Muat semula pembayaran.
+Use a customer account to pay online.	Gunakan akaun pelanggan untuk membayar dalam talian.
+Choose a payment method.	Pilih kaedah pembayaran.
+Payment not found.	Pembayaran tidak ditemui.
+Only completed payments can be refunded.	Hanya pembayaran yang selesai boleh dibayar balik.
+This service has already started or been fulfilled. A refund is unavailable.	Perkhidmatan telah bermula atau selesai. Bayaran balik tidak tersedia.
+Open payment details to request a refund.	Buka butiran pembayaran untuk memohon bayaran balik.
+Registered. Complete checkout.	Berdaftar. Lengkapkan pembayaran.
 Transactions	Transaksi
-Test spend: %s	Perbelanjaan ujian: %s
-TEST RECEIPT · NO MONEY CHARGED	RESIT UJIAN · TIADA CAJ WANG
+Checkout total: %s	Jumlah pembayaran: %s
++{0} points	+{0} mata
 
 # Booking / competition / receipt update
 Competitions & offers	Pertandingan & tawaran
@@ -681,12 +672,11 @@ Your full receipt is being emailed.	Resit penuh anda sedang dihantar melalui e-m
 Your full receipt is queued for email.	Resit penuh anda menunggu untuk dihantar melalui e-mel.
 View full receipt (PDF)	Lihat resit penuh (PDF)
 Total paid	Jumlah dibayar
-Test total	Jumlah ujian
+Checkout total	Jumlah pembayaran
 Voided total	Jumlah dibatalkan
 Date	Tarikh
 Time	Masa
 View receipt	Lihat resit
-Test payment. No real money was charged.	Pembayaran ujian. Tiada wang sebenar dicaj.
 Email receipt is unavailable. You can still view the full PDF.	Resit e-mel tidak tersedia. Anda masih boleh melihat PDF penuh.
 
 Your café orders	Pesanan kafe anda

@@ -1,6 +1,7 @@
 package com.ctfly.app
 
 import android.app.NotificationManager
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -9,16 +10,16 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ctfly.app.database.remote.ClubGateway
+import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.supabase.CtflyApi
+import com.ctfly.app.database.remote.text
+import com.ctfly.app.state.AppViewModel
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
-import com.ctfly.app.data.ClubGateway
-import com.ctfly.app.data.CtflyApi
-import com.ctfly.app.data.obj
-import com.ctfly.app.data.rows
-import com.ctfly.app.data.text
-import com.ctfly.app.state.AppViewModel
 import java.io.File
 import java.time.Instant
 import org.json.JSONArray
@@ -45,7 +46,13 @@ class CafePickupStateTest {
         Thread.sleep(250)
     }
 
-    private fun launch(width: Int, height: Int, ready: Boolean = false, font: String = "1.0") {
+    private fun launch(
+        width: Int,
+        height: Int,
+        ready: Boolean = false,
+        font: String = "1.0",
+        fromNotification: Boolean = false,
+    ) {
         shell("settings put system accelerometer_rotation 0")
         shell("settings put system user_rotation 0")
         shell("wm size ${width}x$height")
@@ -85,7 +92,7 @@ class CafePickupStateTest {
                     "order_items",
                     JSONArray().put(obj("order_id" to orderId, "name" to "Iced coffee", "qty" to 1)),
                 )
-        val base = FixtureGateway(fixture, true)
+        val base = FixtureGateway(fixture, signedIn = !fromNotification)
         app.gatewayFactory = {
             object : ClubGateway by base {
                 override val cachedSnapshot
@@ -105,7 +112,12 @@ class CafePickupStateTest {
                 }
             }
         }
-        scenario = ActivityScenario.launch(MainActivity::class.java)
+        val intent = Intent(app, MainActivity::class.java)
+        if (fromNotification) {
+            intent.putExtra("pickup_user", fixtureOwner(role))
+            intent.putExtra("pickup_order", orderId)
+        }
+        scenario = ActivityScenario.launch(intent)
         compose.waitForIdle()
     }
 
@@ -251,6 +263,24 @@ class CafePickupStateTest {
             vm.openOrderFromNotification("another-user", orderId)
             assertTrue(vm.field("dialog").isBlank())
             vm.openOrderFromNotification(vm.userId, orderId)
+            assertEquals("pickupQr", vm.field("dialog"))
+            assertEquals(orderId, vm.field("selectedOrder"))
+        }
+    }
+
+    @Test
+    fun notificationOpenedWhileSignedOutKeepsOrdersDestinationAfterLogin() {
+        Assume.assumeFalse(BuildConfig.STAFF_APP)
+        launch(390, 844, ready = true, fromNotification = true)
+        change { vm ->
+            vm.set("email", "fixture@example.test")
+            vm.password = "fixture-password"
+            vm.authenticate()
+        }
+        change { vm ->
+            assertEquals("customer", vm.role)
+            assertEquals("Bookings", vm.field("page"))
+            assertEquals("Orders", vm.field("bookingTab"))
             assertEquals("pickupQr", vm.field("dialog"))
             assertEquals(orderId, vm.field("selectedOrder"))
         }

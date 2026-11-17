@@ -1,7 +1,7 @@
 package com.ctfly.app
 
-import com.ctfly.app.data.text
-import com.ctfly.app.state.AppStrings
+import com.ctfly.app.database.remote.text
+import com.ctfly.app.ui.common.AppStrings
 import java.io.File
 import org.junit.Assert.*
 import org.junit.Before

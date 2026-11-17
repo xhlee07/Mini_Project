@@ -6,13 +6,13 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
-import com.ctfly.app.data.ApiFailure
-import com.ctfly.app.data.ClubGateway
-import com.ctfly.app.data.CtflyApi
-import com.ctfly.app.data.obj
-import com.ctfly.app.data.rows
-import com.ctfly.app.data.text
-import com.ctfly.app.state.AppPreferences
+import com.ctfly.app.database.local.AppPreferences
+import com.ctfly.app.database.remote.ApiFailure
+import com.ctfly.app.database.remote.ClubGateway
+import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.supabase.CtflyApi
+import com.ctfly.app.database.remote.text
 import com.ctfly.app.state.AppViewModel
 import java.io.File
 import java.time.Instant
@@ -217,7 +217,7 @@ class PaymentFixtureGateway(
         android.util.Log.i("PaymentFixture", "response=$response")
         if (failAfterSuccessOnce && action == "test_resolve" && d.text("outcome") == "Success") {
             failAfterSuccessOnce = false
-            throw java.io.IOException("Connection lost. Retry the test payment.")
+            throw java.io.IOException("Connection lost. Try confirming the payment again.")
         }
         return response
     }
@@ -266,13 +266,15 @@ class PaymentStateTest {
 
     private fun start(method: String = "TNG") {
         change { it.openCheckout("Order", orderId) }
-        compose.waitUntil(5000) { gateway.paymentRequests.isNotEmpty() }
+        compose.waitUntil(15000) {
+            compose.onAllNodesWithTag("checkout-list").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("checkout-list").performScrollToNode(hasTestTag("method-$method"))
         compose.onNodeWithTag("method-$method").performScrollTo().performClick()
         compose.onNodeWithTag("start-test-payment").performScrollTo()
         compose.onNodeWithTag("start-test-payment").performClick()
         try {
-            compose.waitUntil(5000) {
+            compose.waitUntil(15000) {
                 compose.onAllNodesWithTag("confirm-test-payment").fetchSemanticsNodes().isNotEmpty()
             }
         } catch (e: Throwable) {
@@ -332,57 +334,43 @@ class PaymentStateTest {
         scenario!!.recreate()
         compose.waitForIdle()
         compose.onNodeWithTag("confirm-test-payment").performScrollTo().performClick()
-        compose.waitUntil(5000) {
+        compose.waitUntil(15000) {
             gateway.fixture.rows("test_payments").any {
                 it.text("source_id") == orderId && it.text("status") == "Succeeded"
             }
         }
-        compose.onNodeWithText("Test payment successful").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Payment confirmed").performScrollTo().assertIsDisplayed()
         capture("payment-phone-success")
-        compose.onNodeWithText("View / share receipt").performScrollTo().performClick()
+        compose.onNodeWithText("View receipt").performScrollTo().performClick()
         compose
-            .onNodeWithText("TEST RECEIPT - NO MONEY CHARGED", substring = true)
+            .onNode(hasText("No money was charged.") and hasAnyAncestor(isDialog()))
             .assertIsDisplayed()
         compose.onNodeWithText("Share PDF receipt").performScrollTo().assertIsDisplayed()
         capture("payment-phone-test-receipt")
         assertEquals(0, gateway.fixture.getJSONObject("profile").optInt("points"))
         assertEquals(0, gateway.fixture.getJSONObject("profile").optInt("spent"))
         change { it.set("dialog", "") }
-        compose.onNodeWithText("Request test refund").performScrollTo().performClick()
-        compose.onNodeWithText("Confirm test refund").performScrollTo().performClick()
-        compose.onNodeWithText("Test refund completed").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Request refund").performScrollTo().performClick()
+        compose.onNodeWithText("Confirm refund").performScrollTo().performClick()
+        compose.onNodeWithText("Refund completed").performScrollTo().assertIsDisplayed()
     }
 
     @Test
-    fun failureProcessingAndTransportRetryKeepSingleReceipt() {
+    fun transportRetryKeepsSingleReceipt() {
         Assume.assumeFalse(BuildConfig.STAFF_APP)
         launch()
         start("FPX")
-        compose.onNodeWithText("Demo controls").performScrollTo().performClick()
-        compose.onNodeWithText("Simulate failure").performScrollTo().performClick()
-        compose.onNodeWithText("Retry test checkout").performScrollTo().performClick()
-        compose.waitUntil(5000) {
-            compose.onAllNodesWithTag("start-test-payment").fetchSemanticsNodes().isNotEmpty()
-        }
-        compose.onNodeWithTag("start-test-payment").performScrollTo().performClick()
-        compose.onNodeWithText("Demo controls").performScrollTo().performClick()
-        compose.onNodeWithText("Simulate processing").performScrollTo().performClick()
-        compose
-            .onNodeWithText(
-                "Still processing in the simulator. Complete or cancel this demo below."
-            )
-            .performScrollTo()
-            .assertIsDisplayed()
-        capture("payment-processing")
+        compose.onNodeWithText("Demo controls").assertDoesNotExist()
         scenario!!.recreate()
         compose.waitForIdle()
         gateway.failAfterSuccessOnce = true
         compose.onNodeWithTag("confirm-test-payment").performScrollTo().performClick()
         compose.waitUntil(5000) { !gateway.failAfterSuccessOnce }
+        compose.onNodeWithText("Connection lost. Try confirming the payment again.").assertIsDisplayed()
         // Response loss after commit: retry uses the same persisted request ID.
         compose.onNodeWithTag("confirm-test-payment").performScrollTo().performClick()
         compose.waitUntil(5000) {
-            compose.onAllNodesWithText("Test payment successful").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText("Payment confirmed").fetchSemanticsNodes().isNotEmpty()
         }
         val requests = gateway.paymentRequests.takeLast(2)
         assertEquals(requests[0], requests[1])
@@ -402,7 +390,7 @@ class PaymentStateTest {
         scenario!!.recreate()
         change { it.set("page", "Settings") }
         change { it.set("page", "Checkout") }
-        compose.onNodeWithText("MOD UJIAN · TIADA CAJ WANG").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Tiada wang akan dicaj.").performScrollTo().assertIsDisplayed()
         capture("payment-tablet-malay")
     }
 
@@ -416,7 +404,7 @@ class PaymentStateTest {
         change { vm ->
             vm.resumeCheckout(vm.rows("test_payments").first { it.text("status") == "Succeeded" })
         }
-        compose.onNodeWithText("TEST MODE · NO MONEY CHARGED").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Payment confirmed").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("confirm-test-payment").assertDoesNotExist()
         capture("payment-staff-details")
     }

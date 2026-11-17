@@ -21,18 +21,18 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.ctfly.app.BuildConfig
-import com.ctfly.app.data.rows
-import com.ctfly.app.data.text
+import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.text
 import com.ctfly.app.notifications.PickupNotifications
-import com.ctfly.app.state.AppIcon
-import com.ctfly.app.state.AppText
 import com.ctfly.app.state.AppViewModel
-import com.ctfly.app.state.LocalAppLanguage
+import com.ctfly.app.ui.common.AppIcon
+import com.ctfly.app.ui.common.AppText
 import com.ctfly.app.ui.common.Lime
+import com.ctfly.app.ui.common.LocalAppLanguage
 import com.ctfly.app.ui.common.Muted
 import com.ctfly.app.ui.common.SurfaceCard
-import com.ctfly.app.ui.customer.openCafeOrders
-import com.ctfly.app.ui.customer.openPickup
+import com.ctfly.app.ui.customer.cafe.openCafeOrders
+import com.ctfly.app.ui.customer.cafe.openPickup
 
 @Composable
 fun PickupPermissionPrompt(vm: AppViewModel) {

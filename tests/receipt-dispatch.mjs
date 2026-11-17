@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import { sqlSection } from './sql-section.mjs';
 
 export async function verifyReceiptDispatch({db, action, snapshot, customer}) {
   await db.exec('reset role');
-  const migration = await readFile(new URL('../supabase/migrations/20261015161718_receipt_immediate_dispatch.sql', import.meta.url), 'utf8');
+  const migration = sqlSection('receipt-dispatch');
   await db.exec(migration);
   await db.exec(migration); // Safe to reapply; must leave exactly one trigger.
   // Replace only the network boundary in the local database. No real email.
@@ -59,5 +59,19 @@ export async function verifyReceiptDispatch({db, action, snapshot, customer}) {
     await db.exec('reset role');
   }
   assert.equal((await raw("select count(*)::int n from pg_trigger where tgrelid='public.receipt_email_jobs'::regclass and tgname='dispatch_queued_receipt'")).rows[0].n, 1);
-  console.log('PASS: immediate receipt dispatch on payment/retry; no unpaid sends, duplicate claims, rollback sends or exposed worker access; HTTP failure preserves cron fallback. No external email.');
+
+  const nextId = (await raw(`insert into public.bills(user_id,kind,source_id,subtotal,discount,total,points,method)
+    values ($1,'Order',gen_random_uuid(),100,0,100,1,'Cash') returning id`, [customer])).rows[0].id;
+  const claim = async () => (await raw("select private.receipt_worker($1,'claim','{}') r",[secret])).rows[0].r;
+  const jobStatus = async billId => (await raw('select status from public.receipt_email_jobs where bill_id=$1',[billId])).rows[0].status;
+  const interrupted = await claim();
+  assert.equal(interrupted.length, 1, 'claim only the receipt the worker is about to send');
+  const interruptedId = interrupted[0].bill.id;
+  const queuedId = interruptedId === id ? nextId : id;
+  assert.equal(await jobStatus(queuedId), 'Queued');
+  await raw("update public.receipt_email_jobs set last_attempt=now()-interval '6 minutes' where bill_id=$1",[interruptedId]);
+  assert.equal((await claim())[0].bill.id, queuedId, 'cron can claim the untouched receipt after an interruption');
+  assert.equal(await jobStatus(interruptedId), 'Unknown', 'ambiguous delivery still requires verification');
+  await raw("select private.receipt_worker($1,'result',$2::jsonb)",[secret,JSON.stringify({id:queuedId,status:'Sent',provider_id:'local-test'})]);
+  console.log('PASS: immediate receipt dispatch on payment/retry; no duplicate claims or rollback sends; interruptions leave untouched receipts queued. No external email.');
 }
