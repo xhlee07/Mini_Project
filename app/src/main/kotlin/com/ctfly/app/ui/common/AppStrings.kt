@@ -1,0 +1,178 @@
+package com.ctfly.app.ui.common
+
+import android.content.Context
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
+import com.ctfly.app.database.local.AppPreferences
+import com.ctfly.app.database.remote.text
+
+val LocalAppPreferences =
+    staticCompositionLocalOf<AppPreferences> { error("Missing app preferences") }
+val LocalAppLanguage = staticCompositionLocalOf { "en" }
+
+@Composable fun tr(text: String): String = AppStrings.translate(text, LocalAppLanguage.current)
+
+@Composable
+fun AppIcon(
+    imageVector: ImageVector,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    tint: Color = androidx.compose.material3.LocalContentColor.current,
+) {
+    androidx.compose.material3.Icon(imageVector, contentDescription?.let { tr(it) }, modifier, tint)
+}
+
+@Composable
+fun AppSnackbarHost(
+    state: androidx.compose.material3.SnackbarHostState,
+    modifier: Modifier = Modifier,
+) {
+    androidx.compose.material3.SnackbarHost(state, modifier) { data ->
+        androidx.compose.material3.Snackbar { AppText(data.visuals.message) }
+    }
+}
+
+/** Translates presentation only: route IDs, action names and database values stay canonical. */
+@Composable
+fun AppText(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    fontSize: TextUnit = TextUnit.Unspecified,
+    fontStyle: FontStyle? = null,
+    fontWeight: FontWeight? = null,
+    fontFamily: FontFamily? = null,
+    letterSpacing: TextUnit = TextUnit.Unspecified,
+    textDecoration: TextDecoration? = null,
+    textAlign: TextAlign? = null,
+    lineHeight: TextUnit = TextUnit.Unspecified,
+    overflow: TextOverflow = TextOverflow.Clip,
+    softWrap: Boolean = true,
+    maxLines: Int = Int.MAX_VALUE,
+    minLines: Int = 1,
+    style: TextStyle = androidx.compose.material3.LocalTextStyle.current,
+    localize: Boolean = true,
+) {
+    androidx.compose.material3.Text(
+        if (localize) tr(text) else text,
+        modifier,
+        color,
+        fontSize,
+        fontStyle,
+        fontWeight,
+        fontFamily,
+        letterSpacing,
+        textDecoration,
+        textAlign,
+        lineHeight,
+        overflow,
+        softWrap,
+        maxLines,
+        minLines,
+        style = style,
+    )
+}
+
+object AppStrings {
+    // Shared assets are packaged in both APKs. No translation service or network is used.
+    private var entries: Map<String, String> = emptyMap()
+    private var lowercaseEntries: Map<String, String> = emptyMap()
+    private var templates: List<Triple<Regex, String, Boolean>> = emptyList()
+
+    @Synchronized
+    fun load(context: Context) {
+        if (entries.isNotEmpty()) return
+        context.assets.open("languages.tsv").bufferedReader().useLines { lines -> install(lines) }
+    }
+
+    internal fun install(lines: Sequence<String>) {
+        entries =
+            lines
+                .filter { it.isNotBlank() && !it.startsWith("#") }
+                .map { line ->
+                    val fields = line.split('\t')
+                    require(fields.size == 2) { "Invalid language entry: ${fields.first()}" }
+                    fields[0].replace("\\n", "\n") to fields[1].replace("\\n", "\n")
+                }
+                .toMap()
+        lowercaseEntries = entries.mapKeys { it.key.lowercase(java.util.Locale.ROOT) }
+        templates =
+            entries
+                .filterKeys { it.contains("{0}") }
+                .map { (key, value) ->
+                    val regex =
+                        key.split(Regex("\\{\\d+\\}")).joinToString("(.+?)") { Regex.escape(it) }
+                    Triple(
+                        Regex("^$regex$"),
+                        value,
+                        key !in
+                            setOf(
+                                "Hey, {0}.",
+                                "Your team: {0}",
+                                "Deliver to {0}",
+                                "Winner: {0}",
+                                "{0} wins",
+                                "{0} will advance. Results are final.",
+                            ),
+                    )
+                }
+    }
+
+    fun translate(text: String, language: String): String {
+        if (language != "ms") return text
+        val direct = entries[text] ?: lowercaseEntries[text.lowercase(java.util.Locale.ROOT)]
+        if (direct != null) return direct
+        for ((pattern, value, translateValues) in templates) pattern.matchEntire(text)?.let { match
+            ->
+            var translated = value
+            match.groupValues.drop(1).forEachIndexed { index, part ->
+                translated =
+                    translated.replace(
+                        "{$index}",
+                        if (translateValues) translate(part, language) else part,
+                    )
+            }
+            return translated
+        }
+        val templates =
+            listOf(
+                "Welcome back, " to "Selamat kembali, ",
+                "Welcome, " to "Selamat datang, ",
+                "Voucher " to "Baucar ",
+            )
+        for ((prefix, translated) in templates) if (text.startsWith(prefix))
+            return translated + text.removePrefix(prefix)
+        val units =
+            listOf(
+                Regex("^(\\d+) minutes$") to "{0} minit",
+                Regex("^(\\d+) players?$") to "{0} pemain",
+                Regex("^(\\d+) player\\(s\\)$") to "{0} pemain",
+                Regex("^(\\d+) points$") to "{0} mata",
+                Regex("^(\\d+) pts$") to "{0} mata",
+                Regex("^(.+) member$") to "Ahli {0}",
+            )
+        for ((pattern, translated) in units) pattern.matchEntire(text)?.let { m ->
+            return translated.replace("{0}", translate(m.groupValues[1], language))
+        }
+        // Compound status/category labels are localized without translating unknown names.
+        if (text.contains(" · "))
+            return text.split(" · ").joinToString(" · ") { translate(it, language) }
+        Regex("^((?:L[12]|G|\\d+)) (.+)$").matchEntire(text)?.let { match ->
+            val part = translate(match.groupValues[2], language)
+            if (part != match.groupValues[2]) return "${match.groupValues[1]} $part"
+        }
+        if (text.contains('\n'))
+            return text.split('\n').joinToString("\n") { translate(it, language) }
+        return text
+    }
+}
