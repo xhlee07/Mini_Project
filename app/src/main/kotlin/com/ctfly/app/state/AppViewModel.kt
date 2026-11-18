@@ -16,13 +16,16 @@ import com.ctfly.app.auth.biometrics.StaffBiometrics
 import com.ctfly.app.auth.session.StaffSessionGateway
 import com.ctfly.app.database.remote.ApiFailure
 import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.profileId
 import com.ctfly.app.database.remote.rows
 import com.ctfly.app.database.remote.text
+import com.ctfly.app.domain.CafeZone
 import com.ctfly.app.domain.adult
 import com.ctfly.app.domain.payment.paymentMessageLabel
 import com.ctfly.app.notifications.PickupNotifications
 import com.ctfly.app.ui.customer.cafe.openCafeOrders
 import com.ctfly.app.ui.customer.cafe.openPickup
+import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -459,7 +462,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
             else "This account is staff or admin. Sign in with Staff CTFLY."
 
     val userId
-        get() = profile.text("id")
+        get() = profile.profileId()
 
     private var accountGeneration = 0
     private var refreshInFlight = false
@@ -921,11 +924,14 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                     "Staff accounts are provisioned by the administrator."
                 }
                 require(field("name").trim().length >= 2) { "Enter your name." }
-                require(adult(field("dob"))) { "You must be 18 or older. Choose your birth date." }
+                val dob =
+                    field("dob").ifBlank { LocalDate.now(CafeZone).minusYears(18).toString() }
+                if (field("dob").isBlank()) set("dob", dob)
+                require(adult(dob)) { "You must be 18 or older. Choose your birth date." }
                 require(password.length >= 8 && password == confirmPassword) {
                     "Use at least 8 characters and match both passwords."
                 }
-                if (api.signup(email, password, field("name").trim(), field("dob"), field("phone")))
+                if (api.signup(email, password, field("name").trim(), dob, field("phone")))
                     finishLogin()
                 else {
                     set("authMode", "verify")
@@ -934,10 +940,10 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                 }
             }
             "forgot" -> {
-                api.recover(email)
+                val notice: String = api.recover(email)
+                message = notice
                 set("authMode", "verify")
                 set("verifyType", "recovery")
-                message = "If an account exists, a recovery email has been sent."
             }
             "verify" -> {
                 require(field("code").matches(Regex("[0-9]{6,10}"))) {
@@ -968,7 +974,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
             throw IllegalArgumentException(wrongAppMessage)
         }
         accountGeneration++
-        val owner = fresh.optJSONObject("profile")?.text("id").orEmpty()
+        val owner = fresh.optJSONObject("profile")?.profileId().orEmpty()
         staffDevices = emptyList()
         staffDevicesLoaded = false
         staffDevicesLoading = false
@@ -993,9 +999,10 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
     }
 
     fun resend() = run {
-        if (field("verifyType") == "recovery") api.recover(field("email"))
-        else api.resend(field("email"))
-        message = "A new code was requested. Check your inbox and spam folder."
+        val notice: String =
+            if (field("verifyType") == "recovery") api.recover(field("email"))
+            else api.resend(field("email"))
+        message = notice
     }
 
     fun quotePayment() {

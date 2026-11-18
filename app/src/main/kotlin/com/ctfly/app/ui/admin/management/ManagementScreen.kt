@@ -12,7 +12,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.profileId
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.staffId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.CafeZone
 import com.ctfly.app.domain.StaffDateFilter
@@ -281,7 +283,7 @@ fun ManagementScreen(vm: AppViewModel) {
                 items(vm.rows("shifts").onStaffDay(vm, "managerStaffHistoryDay", "starts_at")) { s
                     ->
                     SurfaceCard {
-                        AppText(vm.person(s.text("user_id")), fontWeight = FontWeight.Bold)
+                        AppText(vm.person(s.staffId()), fontWeight = FontWeight.Bold)
                         AppText(
                             "${dateLabel(s.text("starts_at"))} → ${dateLabel(s.text("ends_at"))}",
                             color = Muted,
@@ -304,7 +306,7 @@ fun ManagementScreen(vm: AppViewModel) {
                     ->
                     SurfaceCard {
                         AppText(
-                            "${vm.person(l.text("user_id"))} · ${l.text("day")}",
+                            "${vm.person(l.staffId())} · ${l.text("day")}",
                             fontWeight = FontWeight.Bold,
                         )
                         AppText(l.text("reason"), color = Muted)
@@ -338,7 +340,7 @@ fun ManagementScreen(vm: AppViewModel) {
                                 vm.openForm(
                                     "member_profile",
                                     obj(
-                                        "user_id" to p.text("id"),
+                                        "profile_id" to p.profileId(),
                                         "name" to p.text("name"),
                                         "phone" to p.text("phone"),
                                     ),
@@ -352,7 +354,7 @@ fun ManagementScreen(vm: AppViewModel) {
                                 vm.action(
                                     "member_status",
                                     obj(
-                                        "user_id" to p.text("id"),
+                                        "profile_id" to p.profileId(),
                                         "active" to !p.optBoolean("active"),
                                     ),
                                 )

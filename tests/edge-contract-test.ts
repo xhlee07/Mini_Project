@@ -12,8 +12,8 @@ const mailResults:Record<string,string>[]=[];
 let failPdf=false;
 globalThis.fetch=async (input:RequestInfo|URL,init?:RequestInit)=>{
  const url=String(input);const headers=new Headers(init?.headers);
- if(url.endsWith('/auth/v1/user'))return Response.json(headers.get('Authorization')==='Bearer expired'?{}:{id:'00000000-0000-4000-8000-000000000001'},{status:headers.get('Authorization')==='Bearer expired'?401:200});
- if(url.endsWith('/ctfly_snapshot'))return Response.json({profile:{role:headers.get('Authorization')==='Bearer customer'?'customer':'staff',active:true}});
+ if(url.endsWith('/ctfly_session_profile')){const session=headers.get('X-CTFLY-Session');return Response.json(session&&session!=='expired'?{id:'00000000-0000-4000-8000-000000000001'}:{message:'Sign in required'},{status:session&&session!=='expired'?200:401});}
+ if(url.endsWith('/ctfly_snapshot'))return Response.json({profile:{role:headers.get('X-CTFLY-Session')==='customer'?'customer':'staff',active:true}});
  if(url.includes('/storage/v1/object/')){if(headers.get('apikey')!=='sb_secret_fixture'||headers.has('Authorization'))throw Error('Storage service key handling incorrect');uploaded=true;return Response.json({});}
  if(url.endsWith('/ctfly_receipt_worker')){const b=JSON.parse(String(init?.body));if(b.p_secret!=='private-fixture-secret')return Response.json({message:'Worker authentication failed'},{status:400});recipientArgument=Boolean(b.p_data.email);if(b.p_operation==='claim')return Response.json([{email:'member@example.com',bill:{id:'fixture-bill-1',kind:'Booking',created_at:'2026-10-14T02:00:00Z',status:'Paid',environment:'test',method:'Test TNG',subtotal:1200,discount:0,total:1200,points:12,details:{activity:'PC',duration_minutes:120,customer_name:failPdf?'Άννα':'Customer'}}}]);if(b.p_operation==='result')mailResults.push(b.p_data);return Response.json({configured:mailConfigured});}
  if(url.startsWith('https://raw.githubusercontent.com/')&&failPdf)return new Response('Font unavailable',{status:503});
@@ -24,10 +24,10 @@ await import('../supabase/functions/club-services/index.ts');
 const call=(body:unknown,headers:Record<string,string>={})=>handler(new Request('https://fixture/functions',{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(body)}));
 function check(value:boolean,label:string){if(!value)throw Error(label);}
 check((await call({operation:'poster'})).status===401,'Unsigned request denied');
-check((await call({operation:'poster'},{Authorization:'Bearer expired'})).status===401,'Expired login denied');
-check((await call({operation:'poster',base64:'/9j/AA=='},{Authorization:'Bearer customer'})).status===403,'Customer upload denied');
-check((await call({operation:'poster',base64:'bm90anBlZw=='},{Authorization:'Bearer staff'})).status===400,'Non JPEG denied');
-const poster=await call({operation:'poster',base64:'/9j/AA=='},{Authorization:'Bearer staff'});check(poster.status===200&&uploaded,'Staff upload accepted');
+check((await call({operation:'poster'},{'X-CTFLY-Session':'expired'})).status===401,'Expired login denied');
+check((await call({operation:'poster',base64:'/9j/AA=='},{'X-CTFLY-Session':'customer'})).status===403,'Customer upload denied');
+check((await call({operation:'poster',base64:'bm90anBlZw=='},{'X-CTFLY-Session':'staff'})).status===400,'Non JPEG denied');
+const poster=await call({operation:'poster',base64:'/9j/AA=='},{'X-CTFLY-Session':'staff'});check(poster.status===200&&uploaded,'Staff upload accepted');
 const posterData=await poster.json();check(posterData.url.startsWith('https://fixture.supabase.test/storage/v1/object/public/event-posters/00000000-0000-4000-8000-000000000001/'),'Poster belongs to staff folder');
 check((await call({operation:'dispatch'},{'X-Receipt-Worker':'wrong'})).status===403,'Wrong worker secret denied');
 const mail=await call({operation:'dispatch',email:'somebody@example.com'},{'X-Receipt-Worker':'private-fixture-secret'});const state=await mail.json();check(mail.status===200&&state.configured===false&&state.processed===0&&!recipientArgument,'No mail before configuration and no caller-supplied recipient');

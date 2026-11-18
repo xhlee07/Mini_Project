@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.staffId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.StaffDateFilter
 import com.ctfly.app.domain.historyDateLabel
@@ -49,11 +50,11 @@ fun HandoverScreen(vm: AppViewModel) {
                 AppText(h.text("title"), style = MaterialTheme.typography.titleLarge)
                 AppText(h.text("note"), color = Muted)
                 AppText(
-                    "${vm.person(h.text("user_id"))} · ${historyDateLabel(h.text("created_at"))}",
+                    "${vm.person(h.staffId())} · ${historyDateLabel(h.text("created_at"))}",
                     fontSize = 11.sp,
                     color = Muted,
                 )
-                if (h.text("user_id") != vm.userId) {
+                if (h.staffId() != vm.userId) {
                     val read =
                         vm.rows("handover_reads").any { it.text("handover_id") == h.text("id") }
                     TextButton(

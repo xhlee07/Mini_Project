@@ -12,11 +12,12 @@ const json = (data: unknown, status = 200) => Response.json(data, {
 class Rejection extends Error {
   constructor(message: string, readonly status = 400, readonly code = 'device_request_failed') { super(message); }
 }
-async function request(path: string, body: unknown, key: string, token = '') {
+async function request(path: string, body: unknown, key: string, session = '') {
   const response = await fetch(base + path, {
     method: 'POST',
     headers: { apikey: key, 'Content-Type': 'application/json',
-      ...(token ? { Authorization: 'Bearer ' + token } : key.startsWith('eyJ') ? { Authorization: 'Bearer ' + key } : {}) },
+      ...(session ? { 'X-CTFLY-Session': session } : {}),
+      ...(key.startsWith('eyJ') ? { Authorization: 'Bearer ' + key } : {}) },
     body: JSON.stringify(body), signal: AbortSignal.timeout(15000),
   });
   const data = await response.json();
@@ -63,12 +64,10 @@ export async function handler(req: Request): Promise<Response> {
     const device = body.device_id;
     if (body.operation !== 'list' && !uuid(device)) throw new Rejection('Invalid device registration.');
     if (['list', 'register', 'remove'].includes(body.operation)) {
-      const token = req.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-      if (!token || !token.startsWith('eyJ')) throw new Rejection('Please sign in first.', 401);
-      // Validate the real user JWT, never trust a client-supplied owner or role.
-      const userResponse = await fetch(base + '/auth/v1/user', { headers: { apikey: anon, Authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(15000) });
-      if (!userResponse.ok) throw new Rejection('Please sign in again.', 401);
-      const user = await userResponse.json();
+      const token = req.headers.get('X-CTFLY-Session') ?? '';
+      if (!token) throw new Rejection('Please sign in first.', 401);
+      // The session token identifies the staff member. The client cannot choose the owner.
+      const user = await request('/rest/v1/rpc/ctfly_session_profile', {}, anon, token);
       if (!uuid(user?.id)) throw new Rejection('Please sign in again.', 401);
       if (body.operation === 'register') {
         if (!(await verify(body.public_key, body.signature, `ctfly-enroll:${user.id}:${device}`))) throw new Rejection('Fingerprint verification failed.', 403);
@@ -89,16 +88,12 @@ export async function handler(req: Request): Promise<Response> {
     try { proof = await auth('consume'); }
     catch { throw new Rejection('Device registration or fingerprint request is unavailable. Sign in with your password to check this phone.', 403, 'device_unavailable'); }
     if (!(await verify(proof.public_key, body.signature, `ctfly-login:${device}:${body.challenge_id}:${proof.nonce}`))) throw new Rejection('Fingerprint verification failed.', 403);
-    // Generate and consume an internal one-time Auth token only after device proof succeeds.
-    // generate_link does not send email. The one-time token is never returned to the app.
-    const link = await request('/auth/v1/admin/generate_link', { type: 'magiclink', email: proof.email }, admin);
-    if (link.id !== proof.owner || !link.hashed_token) throw new Rejection('Staff account is unavailable.', 403);
-    const session = await request('/auth/v1/verify', { token_hash: link.hashed_token, type: 'email' }, anon);
+    const session = await request('/rest/v1/rpc/ctfly_open_session', { p_profile: proof.owner }, admin);
     if (session.user?.id !== proof.owner || !session.access_token || !session.refresh_token) throw new Rejection('Staff account is unavailable.', 403);
-    // Recheck removal/role changes that occurred while Auth issued the session.
+    // Recheck removal/role changes that occurred while the session was issued.
     try { await auth('check'); }
     catch {
-      await fetch(base + '/auth/v1/logout?scope=local', { method: 'POST', headers: { apikey: anon, Authorization: 'Bearer ' + session.access_token } });
+      await request('/rest/v1/rpc/ctfly_logout', {}, anon, session.access_token);
       throw new Rejection('Device registration is unavailable.', 403, 'device_unavailable');
     }
     return json(session);

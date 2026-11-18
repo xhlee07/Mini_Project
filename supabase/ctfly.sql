@@ -4,19 +4,110 @@ begin;
 
 -- Section: base-schema
 create extension if not exists btree_gist;
+create extension if not exists pgcrypto;
 create table public.profiles (
- id uuid primary key references auth.users on delete cascade,
+ profile_id uuid primary key default gen_random_uuid(),
  name text not null check(length(name) between 1 and 80), phone text not null default '',
  dob date not null, role text not null default 'customer' check(role in ('customer','staff','admin')),
  points int not null default 0 check(points>=0), spent int not null default 0 check(spent>=0),
  active boolean not null default true, created_at timestamptz not null default now());
+-- Customer and staff role records hold the account email and password hash.
+-- Profile ID is the shared application key. Supabase auth.users is not used.
+create table public."User" (
+ user_id uuid primary key references public.profiles(profile_id) on delete cascade,
+ aud text,
+ role text,
+ email text,
+ email_confirmed_at timestamptz,
+ phone text,
+ phone_confirmed_at timestamptz,
+ confirmed_at timestamptz,
+ last_sign_in_at timestamptz,
+ app_metadata jsonb not null default '{}'::jsonb,
+ user_metadata jsonb not null default '{}'::jsonb,
+ identities jsonb not null default '[]'::jsonb,
+ created_at timestamptz not null,
+ updated_at timestamptz,
+ is_anonymous boolean not null default false,
+ password_hash text,
+ recovery_code_hash text,
+ recovery_expires timestamptz);
+create table public.staff (
+ staff_id uuid primary key references public.profiles(profile_id) on delete cascade,
+ aud text,
+ role text,
+ email text,
+ email_confirmed_at timestamptz,
+ phone text,
+ phone_confirmed_at timestamptz,
+ confirmed_at timestamptz,
+ last_sign_in_at timestamptz,
+ app_metadata jsonb not null default '{}'::jsonb,
+ user_metadata jsonb not null default '{}'::jsonb,
+ identities jsonb not null default '[]'::jsonb,
+ created_at timestamptz not null,
+ updated_at timestamptz,
+ is_anonymous boolean not null default false,
+ password_hash text,
+ recovery_code_hash text,
+ recovery_expires timestamptz);
+comment on table public."User" is 'Customer account. The password hash stays on this table.';
+comment on table public.staff is 'Staff and admin account. The password hash stays on this table.';
+comment on column public."User".user_id is 'Customer ID, shared with public.profiles.profile_id.';
+comment on column public.staff.staff_id is 'Staff ID, shared with public.profiles.profile_id.';
+comment on column public."User".password_hash is 'Bcrypt hash. The plain password is never stored.';
+comment on column public.staff.password_hash is 'Bcrypt hash. The plain password is never stored.';
+create unique index user_email_key on public."User"(lower(email)) where email is not null;
+create unique index staff_email_key on public.staff(lower(email)) where email is not null;
+create table public.ctfly_sessions (
+ id uuid primary key default gen_random_uuid(),
+ profile_id uuid not null references public.profiles(profile_id) on delete cascade,
+ access_hash text not null unique,
+ refresh_hash text not null unique,
+ expires_at timestamptz not null,
+ created_at timestamptz not null default now());
+alter table public."User" enable row level security;
+alter table public.staff enable row level security;
+alter table public.ctfly_sessions enable row level security;
+revoke all on public."User", public.staff, public.ctfly_sessions from public, anon, authenticated;
+grant select on public."User", public.staff to anon, authenticated;
+revoke select (password_hash, recovery_code_hash) on public."User" from public, anon, authenticated;
+revoke select (password_hash, recovery_code_hash) on public.staff from public, anon, authenticated;
+
+create function public.ctfly_uid() returns uuid
+language plpgsql stable security definer set search_path=public, extensions, pg_temp as $$
+declare headers text; token text; uid uuid;
+begin
+ begin
+  headers:=current_setting('request.headers', true);
+ exception when others then headers:=null; end;
+ if headers is not null and headers<>'' then
+  token:=nullif(btrim(headers::json->>'x-ctfly-session'),'');
+ end if;
+ if token is null then
+  begin token:=nullif(btrim(current_setting('request.header.x-ctfly-session', true)),'');
+  exception when others then token:=null; end;
+ end if;
+ if token is null then return null; end if;
+ select s.profile_id into uid from public.ctfly_sessions s
+  where s.access_hash=encode(digest(token,'sha256'),'hex') and s.expires_at>now();
+ return uid;
+end $$;
+revoke all on function public.ctfly_uid() from public, anon, authenticated;
+grant execute on function public.ctfly_uid() to anon, authenticated;
+
+create policy "Customers can read their own role row" on public."User"
+ for select to anon, authenticated using ((select public.ctfly_uid()) = user_id);
+create policy "Staff can read their own role row" on public.staff
+ for select to anon, authenticated using ((select public.ctfly_uid()) = staff_id);
+
 create table public.resources (
  id bigint generated always as identity primary key, name text not null unique,
  kind text not null check(kind in ('PC','Snooker','Pool','Console','Racing')), zone text not null default 'Standard',
  description text not null, capacity int not null default 1 check(capacity between 1 and 20),
  rate int not null check(rate>0), status text not null default 'Available' check(status in ('Available','Maintenance','Retired')));
 create table public.bookings (
- id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles,
+ id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
  resource_id bigint not null references public.resources, starts_at timestamptz not null, ends_at timestamptz not null,
  guests int not null check(guests>0), total int not null check(total>=0),
  status text not null default 'Reserved' check(status in ('Reserved','Confirmed','Active','Completed','Cancelled','Expired')),
@@ -31,7 +122,7 @@ create table public.products (
  threshold int not null default 5 check(threshold>=0), image text not null default 'iced_coffee', active boolean not null default true);
 create table public.stock_records(id bigint generated always as identity primary key, product_id bigint not null references public.products,
  quantity int not null, reason text not null, created_at timestamptz not null default now());
-create table public.orders(id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles,
+create table public.orders(id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
  booking_id uuid references public.bookings, total int not null check(total>=0), paid boolean not null default false,
  status text not null default 'Pending' check(status in ('Pending','Preparing','Ready','Delivered','Cancelled')), created_at timestamptz not null default now());
 create table public.order_items(id bigint generated always as identity primary key, order_id uuid not null references public.orders,
@@ -41,13 +132,13 @@ create table public.events(id bigint generated always as identity primary key, n
  status text not null default 'Open' check(status in ('Open','Running','Completed','Cancelled')), check(ends_at>starts_at),
  exclude using gist(tstzrange(starts_at,ends_at,'[)') with &&) where(status in ('Open','Running')));
 create table public.registrations(id uuid primary key default gen_random_uuid(), event_id bigint not null references public.events,
- user_id uuid not null references public.profiles, team text not null check(length(team) between 1 and 80), fee int not null,
+ user_id uuid not null references public."User"(user_id), team text not null check(length(team) between 1 and 80), fee int not null,
  paid boolean not null default false, status text not null default 'Registered' check(status in ('Registered','Withdrawn')),
  unique(event_id,user_id));
 create table public.matches(id bigint generated always as identity primary key, event_id bigint not null references public.events,
  round int not null, slot int not null, a uuid references public.registrations, b uuid references public.registrations,
  winner uuid references public.registrations, done boolean not null default false, unique(event_id,round,slot));
-create table public.bills(id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles,
+create table public.bills(id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
  kind text not null check(kind in ('Booking','Order','Event','Extension')), source_id uuid not null, subtotal int not null, discount int not null,
  total int not null check(total>=0), points int not null, method text not null default 'Cash at counter', created_at timestamptz not null default now(),
  status text not null default 'Paid' check(status in ('Paid','Void')), void_reason text not null default '');
@@ -55,51 +146,311 @@ create unique index one_paid_bill on public.bills(kind,source_id) where status='
 create table public.booking_extensions(id uuid primary key default gen_random_uuid(), booking_id uuid not null references public.bookings,
  minutes int not null check(minutes in (30,60)), amount int not null check(amount>=0), created_at timestamptz not null default now());
 create table public.rewards(id bigint generated always as identity primary key, name text not null, points int not null check(points>0), stock int not null check(stock>=0), active boolean not null default true);
-create table public.redemptions(id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles,
+create table public.redemptions(id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
  reward_id bigint not null references public.rewards, name text not null, points int not null, status text not null default 'Pending', created_at timestamptz not null default now());
-create table public.points_transactions(id bigint generated always as identity primary key, user_id uuid not null references public.profiles,
+create table public.points_transactions(id bigint generated always as identity primary key, user_id uuid not null references public."User"(user_id),
  points int not null, reason text not null, created_at timestamptz not null default now());
-create table public.favorites(user_id uuid not null references public.profiles, product_id bigint not null references public.products, primary key(user_id,product_id));
-create table public.shifts(id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles,
+create table public.favorites(user_id uuid not null references public."User"(user_id), product_id bigint not null references public.products, primary key(user_id,product_id));
+create table public.shifts(id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
  starts_at timestamptz not null, ends_at timestamptz not null, status text not null default 'Scheduled' check(status in ('Scheduled','Cancelled')),
- check(ends_at>starts_at), exclude using gist(user_id with =,tstzrange(starts_at,ends_at,'[)') with &&) where(status='Scheduled'));
+ check(ends_at>starts_at), exclude using gist(staff_id with =,tstzrange(starts_at,ends_at,'[)') with &&) where(status='Scheduled'));
 create table public.attendance(id uuid primary key default gen_random_uuid(), shift_id uuid not null unique references public.shifts,
  clock_in timestamptz not null default now(), clock_out timestamptz, late_minutes int not null default 0, early_minutes int not null default 0, minutes int not null default 0);
-create table public.leave_requests(id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles,
+create table public.leave_requests(id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
  day date not null, reason text not null, status text not null default 'Pending' check(status in ('Pending','Approved','Declined')), created_at timestamptz not null default now());
-create table public.tasks(id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles,
+create table public.tasks(id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
  title text not null, day date not null, done boolean not null default false);
-create table public.checklist(user_id uuid not null references public.profiles, day date not null, item text not null, primary key(user_id,day,item));
-create table public.handovers(id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles,
+create table public.checklist(
+ checklist_id uuid primary key default gen_random_uuid(),
+ staff_id uuid not null references public.staff(staff_id),
+ day date not null,
+ item text not null,
+ unique(staff_id,day,item)
+);
+create table public.handovers(id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
  title text not null, note text not null, category text not null, created_at timestamptz not null default now());
-create table public.handover_reads(handover_id uuid not null references public.handovers, user_id uuid not null references public.profiles, primary key(handover_id,user_id));
-create table public.tickets(id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles,
+create table public.handover_reads(handover_id uuid not null references public.handovers, staff_id uuid not null references public.staff(staff_id), primary key(handover_id,staff_id));
+create table public.tickets(id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
  asset text not null, title text not null, priority text not null check(priority in ('Low','Normal','Urgent')), status text not null default 'Open',
- assigned_user uuid references public.profiles, resolution text not null default '', created_at timestamptz not null default now());
+ assigned_staff uuid references public.staff(staff_id), resolution text not null default '', created_at timestamptz not null default now());
 -- Idempotent operations: a network retry cannot repeat an order, payment or booking.
+-- Shared idempotency keys cover both customer and staff mutations, so they stay on profiles.profile_id.
 create table public.requests(user_id uuid not null references public.profiles, request_id uuid not null, result jsonb not null, primary key(user_id,request_id));
 create index booking_member on public.bookings(user_id,starts_at);
 create index order_member on public.orders(user_id,created_at);
-create index shifts_member on public.shifts(user_id,starts_at);
+create index shifts_member on public.shifts(staff_id,starts_at);
 
-create function public.create_profile() returns trigger language plpgsql security definer set search_path=public,pg_temp as $$
-declare birthday date;
+create or replace function public.ctfly_uid() returns uuid
+language plpgsql stable security definer set search_path=public, extensions, pg_temp as $$
+declare headers text; token text; uid uuid;
 begin
- birthday := (new.raw_user_meta_data->>'dob')::date;
- if birthday is null or birthday>(current_timestamp at time zone 'Asia/Kuala_Lumpur')::date-interval '18 years'
- or birthday<(current_timestamp at time zone 'Asia/Kuala_Lumpur')::date-interval '120 years' then
- raise exception 'You must be 18 or older. Enter a valid birth date.'; end if;
- insert into public.profiles(id,name,dob,phone) values(new.id,coalesce(nullif(trim(new.raw_user_meta_data->>'name'),''),'Player'),birthday,coalesce(new.raw_user_meta_data->>'phone',''));
+ begin
+  headers:=current_setting('request.headers', true);
+ exception when others then headers:=null; end;
+ if headers is not null and headers<>'' then
+  token:=nullif(btrim(headers::json->>'x-ctfly-session'),'');
+ end if;
+ if token is null then
+  begin token:=nullif(btrim(current_setting('request.header.x-ctfly-session', true)),'');
+  exception when others then token:=null; end;
+ end if;
+ if token is null then return null; end if;
+ select s.profile_id into uid from public.ctfly_sessions s
+  where s.access_hash=encode(digest(token,'sha256'),'hex') and s.expires_at>now();
+ return uid;
+end $$;
+
+create or replace function public.sync_profile_role_tables() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+ if tg_op='UPDATE' and new.role is not distinct from old.role then return new; end if;
+ if new.role='customer' then
+  delete from public.staff where staff_id=new.profile_id;
+  insert into public."User"(user_id,created_at) values(new.profile_id,now()) on conflict(user_id) do nothing;
+ else
+  delete from public."User" where user_id=new.profile_id;
+  insert into public.staff(staff_id,created_at) values(new.profile_id,now()) on conflict(staff_id) do nothing;
+ end if;
  return new;
 end $$;
-create trigger on_ctfly_signup after insert on auth.users for each row execute function public.create_profile();
 
-create function public.expire_bookings() returns void language sql security definer set search_path=public,pg_temp as $$
+create or replace function public.ctfly_issue_session(p_profile uuid) returns jsonb
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
+declare access_token text; refresh_token text; email text; expires_in int:=2592000;
+begin
+ if not exists(select 1 from public.profiles p where p.profile_id=p_profile and p.active
+  and ((p.role='customer' and exists(select 1 from public."User" u where u.user_id=p.profile_id))
+   or (p.role in ('staff','admin') and exists(select 1 from public.staff s where s.staff_id=p.profile_id)))) then
+  raise exception 'Please sign in with an active CTFLY account with a matching User or staff record.';
+ end if;
+ access_token:=encode(gen_random_bytes(32),'hex');
+ refresh_token:=encode(gen_random_bytes(32),'hex');
+ insert into public.ctfly_sessions(profile_id,access_hash,refresh_hash,expires_at)
+  values(p_profile,encode(digest(access_token,'sha256'),'hex'),encode(digest(refresh_token,'sha256'),'hex'),now()+make_interval(secs=>expires_in));
+ update public."User" set last_sign_in_at=now() where user_id=p_profile;
+ update public.staff set last_sign_in_at=now() where staff_id=p_profile;
+ select coalesce(u.email,s.email) into email
+  from public.profiles p
+  left join public."User" u on u.user_id=p.profile_id
+  left join public.staff s on s.staff_id=p.profile_id
+  where p.profile_id=p_profile;
+ return jsonb_build_object('access_token',access_token,'refresh_token',refresh_token,'expires_in',expires_in,'token_type','bearer','user',jsonb_build_object('id',p_profile,'email',email));
+end $$;
+
+create or replace function public.ctfly_login(p_email text, p_password text) returns jsonb
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
+declare rec record;
+begin
+ begin
+  select * into strict rec from (
+   select p.profile_id, u.password_hash, u.email_confirmed_at
+    from public."User" u join public.profiles p on p.profile_id=u.user_id
+    where lower(u.email)=lower(btrim(p_email)) and p.active
+   union all
+   select p.profile_id, s.password_hash, s.email_confirmed_at
+    from public.staff s join public.profiles p on p.profile_id=s.staff_id
+    where lower(s.email)=lower(btrim(p_email)) and p.active
+  ) accounts;
+ exception when no_data_found or too_many_rows then
+  raise exception 'Email or password is incorrect.';
+ end;
+ if rec.password_hash is null or crypt(p_password, rec.password_hash) is distinct from rec.password_hash then
+  raise exception 'Email or password is incorrect.';
+ end if;
+ if rec.email_confirmed_at is null then
+  raise exception 'Confirm your email before signing in.';
+ end if;
+ return public.ctfly_issue_session(rec.profile_id);
+end $$;
+
+create or replace function public.ctfly_signup(p_email text, p_password text, p_name text, p_dob text, p_phone text) returns jsonb
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
+declare birthday date; pid uuid; normalized text;
+begin
+ normalized:=lower(btrim(p_email));
+ if normalized !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' then
+  raise exception 'Enter a valid email address.';
+ end if;
+ if length(coalesce(p_password,''))<8 then
+  raise exception 'Use at least 8 characters and match both passwords.';
+ end if;
+ if length(btrim(coalesce(p_name,'')))<2 or length(btrim(p_name))>80 then
+  raise exception 'Enter your name.';
+ end if;
+ begin
+  birthday:=nullif(btrim(p_dob),'')::date;
+ exception when invalid_text_representation then birthday:=null; end;
+ if birthday is null then
+  birthday:=((current_timestamp at time zone 'Asia/Kuala_Lumpur')::date - interval '18 years')::date;
+ end if;
+ if birthday>(current_timestamp at time zone 'Asia/Kuala_Lumpur')::date-interval '18 years'
+    or birthday<(current_timestamp at time zone 'Asia/Kuala_Lumpur')::date-interval '120 years' then
+  raise exception 'You must be 18 or older. Enter a valid birth date.';
+ end if;
+ if exists(select 1 from public."User" where lower(email)=normalized)
+    or exists(select 1 from public.staff where lower(email)=normalized) then
+  raise exception 'An account with this email already exists.';
+ end if;
+ insert into public.profiles(name,dob,phone,role) values(btrim(p_name),birthday,coalesce(p_phone,''),'customer') returning profile_id into pid;
+ update public."User" set email=normalized, password_hash=crypt(p_password, gen_salt('bf',10)),
+  email_confirmed_at=now(), confirmed_at=now(), updated_at=now()
+  where user_id=pid;
+ if not found then
+  insert into public."User"(user_id,email,password_hash,email_confirmed_at,confirmed_at,created_at)
+   values(pid,normalized,crypt(p_password, gen_salt('bf',10)),now(),now(),now());
+ end if;
+ return public.ctfly_issue_session(pid);
+end $$;
+
+create or replace function public.ctfly_recover(p_email text) returns jsonb
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
+declare rec record; code text;
+begin
+ begin
+  select * into strict rec from (
+   select u.user_id as profile_id, 'customer' as kind
+    from public."User" u join public.profiles p on p.profile_id=u.user_id
+    where lower(u.email)=lower(btrim(p_email)) and p.active
+   union all
+   select s.staff_id, 'staff'
+    from public.staff s join public.profiles p on p.profile_id=s.staff_id
+    where lower(s.email)=lower(btrim(p_email)) and p.active
+  ) accounts;
+ exception when no_data_found or too_many_rows then
+  return jsonb_build_object('message','If an account exists, a recovery code has been prepared.');
+ end;
+ code:=lpad((mod(abs(hashtext(gen_random_uuid()::text)),1000000))::text,6,'0');
+ if rec.kind='customer' then
+  update public."User" set recovery_code_hash=encode(digest(code||user_id::text,'sha256'),'hex'), recovery_expires=now()+interval '15 minutes' where user_id=rec.profile_id;
+ else
+  update public.staff set recovery_code_hash=encode(digest(code||staff_id::text,'sha256'),'hex'), recovery_expires=now()+interval '15 minutes' where staff_id=rec.profile_id;
+ end if;
+ return jsonb_build_object('message','Email delivery is not configured. Your recovery code is '||code);
+end $$;
+
+create or replace function public.ctfly_resend(p_email text) returns jsonb
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
+begin
+ return public.ctfly_recover(p_email);
+end $$;
+
+create or replace function public.ctfly_verify(p_email text, p_code text, p_type text) returns jsonb
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
+declare rec record; expected text;
+begin
+ if p_type not in ('signup','recovery') then raise exception 'Enter the code from your email.'; end if;
+ begin
+  select * into strict rec from (
+   select u.user_id as profile_id, u.recovery_code_hash, u.recovery_expires, 'customer' as kind
+    from public."User" u where lower(u.email)=lower(btrim(p_email))
+   union all
+   select s.staff_id, s.recovery_code_hash, s.recovery_expires, 'staff'
+    from public.staff s where lower(s.email)=lower(btrim(p_email))
+  ) accounts;
+ exception when no_data_found or too_many_rows then
+  raise exception 'Enter the code from your email.';
+ end;
+ expected:=encode(digest(btrim(p_code)||rec.profile_id::text,'sha256'),'hex');
+ if rec.recovery_code_hash is null or rec.recovery_expires is null or rec.recovery_expires<now()
+    or rec.recovery_code_hash is distinct from expected then
+  raise exception 'Enter the code from your email.';
+ end if;
+ if rec.kind='customer' then
+  update public."User" set recovery_code_hash=null, recovery_expires=null, email_confirmed_at=coalesce(email_confirmed_at,now()), confirmed_at=coalesce(confirmed_at,now()) where user_id=rec.profile_id;
+ else
+  update public.staff set recovery_code_hash=null, recovery_expires=null, email_confirmed_at=coalesce(email_confirmed_at,now()), confirmed_at=coalesce(confirmed_at,now()) where staff_id=rec.profile_id;
+ end if;
+ return public.ctfly_issue_session(rec.profile_id);
+end $$;
+
+create or replace function public.ctfly_new_password(p_password text) returns jsonb
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
+declare uid uuid; hashed text; changed boolean:=false;
+begin
+ uid:=public.ctfly_uid();
+ if uid is null then raise exception 'Please sign in.'; end if;
+ if length(coalesce(p_password,''))<8 then raise exception 'Use at least 8 characters and match both passwords.'; end if;
+ hashed:=crypt(p_password, gen_salt('bf',10));
+ update public."User" set password_hash=hashed, recovery_code_hash=null, recovery_expires=null, updated_at=now() where user_id=uid;
+ if found then changed:=true; end if;
+ update public.staff set password_hash=hashed, recovery_code_hash=null, recovery_expires=null, updated_at=now() where staff_id=uid;
+ if found then changed:=true; end if;
+ if not changed then raise exception 'Please sign in.'; end if;
+ return jsonb_build_object('message','Password saved');
+end $$;
+
+create or replace function public.ctfly_refresh_token(p_refresh text) returns jsonb
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
+declare pid uuid;
+begin
+ select profile_id into pid from public.ctfly_sessions
+  where refresh_hash=encode(digest(coalesce(p_refresh,''),'sha256'),'hex') and expires_at>now();
+ if pid is null then raise exception 'refresh_token_not_found'; end if;
+ delete from public.ctfly_sessions where refresh_hash=encode(digest(p_refresh,'sha256'),'hex');
+ return public.ctfly_issue_session(pid);
+end $$;
+
+create or replace function public.ctfly_logout() returns jsonb
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
+declare headers text; token text;
+begin
+ begin headers:=current_setting('request.headers', true); exception when others then headers:=null; end;
+ if headers is not null and headers<>'' then token:=nullif(btrim(headers::json->>'x-ctfly-session'),''); end if;
+ if token is not null then
+  delete from public.ctfly_sessions where access_hash=encode(digest(token,'sha256'),'hex');
+ end if;
+ return jsonb_build_object('message','Signed out');
+end $$;
+
+create or replace function public.ctfly_session_profile() returns jsonb
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
+declare uid uuid; email text;
+begin
+ uid:=public.ctfly_uid();
+ if uid is null then raise exception 'Sign in required.'; end if;
+ select coalesce(u.email,s.email) into email
+  from public.profiles p
+  left join public."User" u on u.user_id=p.profile_id
+  left join public.staff s on s.staff_id=p.profile_id
+  where p.profile_id=uid and p.active;
+ if email is null and uid is not null and not exists(select 1 from public.profiles where profile_id=uid and active) then
+  raise exception 'Sign in required.';
+ end if;
+ return jsonb_build_object('id',uid,'email',coalesce(email,''));
+end $$;
+
+create or replace function public.ctfly_open_session(p_profile uuid) returns jsonb
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
+begin
+ if not exists(select 1 from public.profiles p where p.profile_id=p_profile and p.active and p.role in ('staff','admin')
+  and exists(select 1 from public.staff s where s.staff_id=p.profile_id)) then
+  raise exception 'Staff account is unavailable.';
+ end if;
+ return public.ctfly_issue_session(p_profile);
+end $$;
+
+drop trigger if exists sync_profile_role_tables on public.profiles;
+create trigger sync_profile_role_tables
+ after insert or update of role on public.profiles
+ for each row execute function public.sync_profile_role_tables();
+
+revoke all on function public.ctfly_uid(), public.sync_profile_role_tables(), public.ctfly_issue_session(uuid),
+ public.ctfly_login(text,text), public.ctfly_signup(text,text,text,text,text), public.ctfly_recover(text),
+ public.ctfly_resend(text), public.ctfly_verify(text,text,text), public.ctfly_new_password(text),
+ public.ctfly_refresh_token(text), public.ctfly_logout(), public.ctfly_session_profile(), public.ctfly_open_session(uuid)
+ from public, anon, authenticated;
+grant execute on function public.ctfly_uid(), public.ctfly_login(text,text), public.ctfly_signup(text,text,text,text,text),
+ public.ctfly_recover(text), public.ctfly_resend(text), public.ctfly_verify(text,text,text), public.ctfly_new_password(text),
+ public.ctfly_refresh_token(text), public.ctfly_logout(), public.ctfly_session_profile()
+ to anon, authenticated;
+grant execute on function public.ctfly_open_session(uuid) to service_role;
+
+create function public.expire_bookings() returns void language sql security definer set search_path=public, extensions, pg_temp as $$
  update bookings set status=case when status='Active' then 'Completed' else 'Expired' end
  where (status in ('Active','Confirmed') and ends_at<=now()) or (status='Reserved' and starts_at+interval '15 minutes'<=now());
 $$;
 
-create function public.ctfly_catalog() returns jsonb language sql security definer set search_path=public,pg_temp as $$
+create function public.ctfly_catalog() returns jsonb language sql security definer set search_path=public, extensions, pg_temp as $$
  select jsonb_build_object(
  'resources',coalesce((select jsonb_agg(r order by id) from resources r where status<>'Retired'),'[]'::jsonb),
  'products',coalesce((select jsonb_agg(p order by id) from products p where active),'[]'::jsonb),
@@ -108,35 +459,37 @@ create function public.ctfly_catalog() returns jsonb language sql security defin
  'rewards',coalesce((select jsonb_agg(r order by id) from rewards r where active),'[]'::jsonb));
 $$;
 
-create function public.ctfly_snapshot() returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
+create function public.ctfly_snapshot() returns jsonb language plpgsql security definer set search_path=public, extensions, pg_temp as $$
 declare me profiles; result jsonb; crew boolean;
 begin
- select * into me from profiles where id=auth.uid() and active;
- if me.id is null then raise exception 'Please sign in with an active CTFLY account.'; end if;
+ select p.* into me from public.profiles p where p.profile_id=public.ctfly_uid() and p.active
+  and ((p.role='customer' and exists(select 1 from public."User" u where u.user_id=p.profile_id))
+   or (p.role in ('staff','admin') and exists(select 1 from public.staff s where s.staff_id=p.profile_id)));
+ if me.profile_id is null then raise exception 'Please sign in with an active CTFLY account with a matching User or staff record.'; end if;
  crew := me.role in ('staff','admin');
  perform expire_bookings();
- result := ctfly_catalog() || jsonb_build_object('profile',to_jsonb(me), 'server_time',now());
+ result := ctfly_catalog() || jsonb_build_object('profile',to_jsonb(me)||jsonb_build_object('id',me.profile_id), 'server_time',now());
  result := result || jsonb_build_object(
- 'bookings',coalesce((select jsonb_agg(b order by starts_at desc) from (select * from bookings where user_id=me.id or crew order by starts_at desc limit 300) b),'[]'::jsonb),
- 'orders',coalesce((select jsonb_agg(o order by created_at desc) from (select * from orders where user_id=me.id or crew order by created_at desc limit 300) o),'[]'::jsonb),
- 'order_items',coalesce((select jsonb_agg(i) from order_items i join orders o on o.id=i.order_id where o.user_id=me.id or crew),'[]'::jsonb),
- 'registrations',coalesce((select jsonb_agg(r) from registrations r where r.user_id=me.id or crew),'[]'::jsonb),
+ 'bookings',coalesce((select jsonb_agg(b order by starts_at desc) from (select * from bookings where user_id=me.profile_id or crew order by starts_at desc limit 300) b),'[]'::jsonb),
+ 'orders',coalesce((select jsonb_agg(o order by created_at desc) from (select * from orders where user_id=me.profile_id or crew order by created_at desc limit 300) o),'[]'::jsonb),
+ 'order_items',coalesce((select jsonb_agg(i) from order_items i join orders o on o.id=i.order_id where o.user_id=me.profile_id or crew),'[]'::jsonb),
+ 'registrations',coalesce((select jsonb_agg(r) from registrations r where r.user_id=me.profile_id or crew),'[]'::jsonb),
  'matches',coalesce((select jsonb_agg(jsonb_build_object('id',m.id,'event_id',m.event_id,'round',m.round,'slot',m.slot,'a',m.a,'b',m.b,'winner',m.winner,'done',m.done,'team_a',a.team,'team_b',b.team,'team_winner',w.team) order by m.round,m.slot)
  from matches m left join registrations a on a.id=m.a left join registrations b on b.id=m.b left join registrations w on w.id=m.winner),'[]'::jsonb),
- 'bills',coalesce((select jsonb_agg(b order by created_at desc) from bills b where b.user_id=me.id or me.role='admin'),'[]'::jsonb),
- 'redemptions',coalesce((select jsonb_agg(r) from redemptions r where r.user_id=me.id or crew),'[]'::jsonb),
- 'points_transactions',coalesce((select jsonb_agg(p order by created_at desc) from points_transactions p where p.user_id=me.id),'[]'::jsonb),
- 'favorites',coalesce((select jsonb_agg(f) from favorites f where user_id=me.id),'[]'::jsonb));
+ 'bills',coalesce((select jsonb_agg(b order by created_at desc) from bills b where b.user_id=me.profile_id or me.role='admin'),'[]'::jsonb),
+ 'redemptions',coalesce((select jsonb_agg(r) from redemptions r where r.user_id=me.profile_id or crew),'[]'::jsonb),
+ 'points_transactions',coalesce((select jsonb_agg(p order by created_at desc) from points_transactions p where p.user_id=me.profile_id),'[]'::jsonb),
+ 'favorites',coalesce((select jsonb_agg(f) from favorites f where user_id=me.profile_id),'[]'::jsonb));
  if crew then
  result := result || jsonb_build_object(
- 'people',coalesce((select jsonb_agg(jsonb_build_object('id',id,'name',name,'role',role,'active',active,'phone',case when me.role='admin' then phone else '' end)) from profiles where me.role='admin' or role in ('staff','admin')),'[]'::jsonb),
- 'shifts',coalesce((select jsonb_agg(s order by starts_at) from shifts s where user_id=me.id or me.role='admin'),'[]'::jsonb),
- 'attendance',coalesce((select jsonb_agg(a) from attendance a join shifts s on s.id=a.shift_id where s.user_id=me.id or me.role='admin'),'[]'::jsonb),
- 'leave_requests',coalesce((select jsonb_agg(l) from leave_requests l where user_id=me.id or me.role='admin'),'[]'::jsonb),
- 'tasks',coalesce((select jsonb_agg(t order by day) from tasks t where user_id=me.id or me.role='admin'),'[]'::jsonb),
- 'checklist',coalesce((select jsonb_agg(c) from checklist c where user_id=me.id and day=(now() at time zone 'Asia/Kuala_Lumpur')::date),'[]'::jsonb),
+ 'people',coalesce((select jsonb_agg(jsonb_build_object('id',profile_id,'name',name,'role',role,'active',active,'phone',case when me.role='admin' then phone else '' end)) from profiles where me.role='admin' or role in ('staff','admin')),'[]'::jsonb),
+ 'shifts',coalesce((select jsonb_agg(s order by starts_at) from shifts s where staff_id=me.profile_id or me.role='admin'),'[]'::jsonb),
+ 'attendance',coalesce((select jsonb_agg(a) from attendance a join shifts s on s.id=a.shift_id where s.staff_id=me.profile_id or me.role='admin'),'[]'::jsonb),
+ 'leave_requests',coalesce((select jsonb_agg(l) from leave_requests l where staff_id=me.profile_id or me.role='admin'),'[]'::jsonb),
+ 'tasks',coalesce((select jsonb_agg(t order by day) from tasks t where staff_id=me.profile_id or me.role='admin'),'[]'::jsonb),
+ 'checklist',coalesce((select jsonb_agg(c) from checklist c where staff_id=me.profile_id and day=(now() at time zone 'Asia/Kuala_Lumpur')::date),'[]'::jsonb),
  'handovers',coalesce((select jsonb_agg(h order by created_at desc) from handovers h),'[]'::jsonb),
- 'handover_reads',coalesce((select jsonb_agg(h) from handover_reads h where user_id=me.id),'[]'::jsonb),
+ 'handover_reads',coalesce((select jsonb_agg(h) from handover_reads h where staff_id=me.profile_id),'[]'::jsonb),
  'tickets',coalesce((select jsonb_agg(t order by created_at desc) from tickets t),'[]'::jsonb));
  end if;
  if me.role='admin' then result := result || jsonb_build_object(
@@ -149,10 +502,11 @@ begin
 end $$;
 
 create function public.ctfly_quote(p_kind text,p_id uuid) returns jsonb
-language plpgsql security definer set search_path=public,pg_temp as $$
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
 declare uid uuid; amount int; spent_total int; discount_total int;
 begin
- if not exists(select 1 from profiles where id=auth.uid() and active and role in ('staff','admin')) then raise exception 'Staff access required.'; end if;
+ if not exists(select 1 from public.profiles p where p.profile_id=public.ctfly_uid() and p.active and p.role in ('staff','admin')
+  and exists(select 1 from public.staff s where s.staff_id=p.profile_id)) then raise exception 'Staff access required.'; end if;
  if p_kind='Booking' then select user_id,total into uid,amount from bookings where id=p_id and status='Reserved' and not paid;
  elsif p_kind='Order' then select user_id,total into uid,amount from orders where id=p_id and status<>'Cancelled' and not paid;
  elsif p_kind='Event' then select user_id,fee into uid,amount from registrations where id=p_id and status='Registered' and not paid;
@@ -160,22 +514,24 @@ begin
   select b.user_id,(r.rate*(case when p_kind='Extension30' then 30 else 60 end)+30)/60 into uid,amount from bookings b join resources r on r.id=b.resource_id where b.id=p_id and b.paid and b.status in ('Confirmed','Active') and b.ends_at>now();
  end if;
  if uid is null then raise exception 'Already paid or no longer payable.'; end if;
- select spent into spent_total from profiles where id=uid;
+ select spent into spent_total from profiles where profile_id=uid;
  discount_total:=amount*(case when spent_total>=100000 then 10 when spent_total>=30000 then 5 else 0 end)/100;
  return jsonb_build_object('id',p_id,'kind',p_kind,'subtotal',amount,'discount',discount_total,'total',amount-discount_total);
 end $$;
 
 create function public.ctfly_action(p_action text, p_data jsonb, p_request uuid) returns jsonb
-language plpgsql security definer set search_path=public,pg_temp as $$
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
 declare me profiles; r resources; b bookings; pr products; ev events; rw rewards; sh shifts; tk tickets;
  oid uuid; uid uuid; sid uuid; bid bigint; n int; amount int; disc int; earned int; target profiles;
  st timestamptz; en timestamptz; item jsonb; result jsonb; existing jsonb; m matches; ids uuid[]; size int; rd int; j int; winner_id uuid; invoice bills; day_value date;
 begin
  -- Serializes mutations per account and keeps retry responses consistent.
- select * into me from profiles where id=auth.uid() and active for update;
- if me.id is null then raise exception 'Please sign in with an active CTFLY account.'; end if;
+ select p.* into me from public.profiles p where p.profile_id=public.ctfly_uid() and p.active
+  and ((p.role='customer' and exists(select 1 from public."User" u where u.user_id=p.profile_id))
+   or (p.role in ('staff','admin') and exists(select 1 from public.staff s where s.staff_id=p.profile_id))) for update;
+ if me.profile_id is null then raise exception 'Please sign in with an active CTFLY account with a matching User or staff record.'; end if;
  if p_request is null then raise exception 'Missing request identifier.'; end if;
- select q.result into existing from requests q where q.user_id=me.id and q.request_id=p_request;
+ select q.result into existing from requests q where q.user_id=me.profile_id and q.request_id=p_request;
  if existing is not null then return existing; end if;
  perform expire_bookings();
  result := jsonb_build_object('message','Saved');
@@ -186,11 +542,11 @@ begin
   n:=(p_data->>'minutes')::int; st:=(p_data->>'starts_at')::timestamptz; en:=st+make_interval(mins=>n);
   if r.id is null or r.status<>'Available' or n not in (60,90,120,180) or st<now()-interval '1 minute' or st>now()+interval '90 days'
    or (p_data->>'guests')::int not between 1 and r.capacity then raise exception 'Choose an available space, valid time and group size.'; end if;
-  if (select count(*) from bookings where user_id=me.id and status in ('Reserved','Confirmed','Active'))>=3 then raise exception 'You can hold up to 3 upcoming bookings.'; end if;
-  insert into bookings(user_id,resource_id,starts_at,ends_at,guests,total) values(me.id,r.id,st,en,(p_data->>'guests')::int,(r.rate*n+30)/60) returning id into oid;
+  if (select count(*) from bookings where user_id=me.profile_id and status in ('Reserved','Confirmed','Active'))>=3 then raise exception 'You can hold up to 3 upcoming bookings.'; end if;
+  insert into bookings(user_id,resource_id,starts_at,ends_at,guests,total) values(me.profile_id,r.id,st,en,(p_data->>'guests')::int,(r.rate*n+30)/60) returning id into oid;
   result:=jsonb_build_object('message','Reserved. Pay at the counter before check-in.','id',oid);
  elsif p_action='cancel_booking' then
-  update bookings set status='Cancelled' where id=(p_data->>'id')::uuid and user_id=me.id and status='Reserved' and starts_at>now();
+  update bookings set status='Cancelled' where id=(p_data->>'id')::uuid and user_id=me.profile_id and status='Reserved' and starts_at>now();
   if not found then raise exception 'Only your unpaid, upcoming reservation can be cancelled.'; end if;
  elsif p_action='extend_booking' then
   if me.role<>'admin' then raise exception 'Manager access required.'; end if;
@@ -205,8 +561,8 @@ begin
   if jsonb_typeof(p_data->'items')<>'array' or jsonb_array_length(p_data->'items') not between 1 and 30 then raise exception 'Choose 1 to 30 products.'; end if;
   if exists(select 1 from jsonb_array_elements(p_data->'items') x group by x->>'id' having count(*)>1) then raise exception 'Duplicate product.'; end if;
   sid:=nullif(p_data->>'booking_id','')::uuid;
-  if sid is not null and not exists(select 1 from bookings where id=sid and user_id=me.id and status='Active' and ends_at>now()) then raise exception 'Delivery needs your active session.'; end if;
-  insert into orders(user_id,booking_id,total) values(me.id,sid,0) returning id into oid;
+  if sid is not null and not exists(select 1 from bookings where id=sid and user_id=me.profile_id and status='Active' and ends_at>now()) then raise exception 'Delivery needs your active session.'; end if;
+  insert into orders(user_id,booking_id,total) values(me.profile_id,sid,0) returning id into oid;
   amount:=0;
   for item in select value from jsonb_array_elements(p_data->'items') order by (value->>'id')::bigint loop
    n:=(item->>'qty')::int;
@@ -220,7 +576,7 @@ begin
   update orders set total=amount where id=oid;
   result:=jsonb_build_object('message','Order sent. Pay at the counter.','id',oid);
  elsif p_action='cancel_order' then
-  perform 1 from orders where id=(p_data->>'id')::uuid and user_id=me.id and status='Pending' and not paid for update;
+  perform 1 from orders where id=(p_data->>'id')::uuid and user_id=me.profile_id and status='Pending' and not paid for update;
   if not found then raise exception 'Only your pending unpaid order can be cancelled.'; end if;
   for item in select to_jsonb(i) from order_items i where order_id=(p_data->>'id')::uuid order by product_id loop
    update products set stock=stock+(item->>'qty')::int where id=(item->>'product_id')::bigint;
@@ -228,31 +584,31 @@ begin
   end loop;
   update orders set status='Cancelled' where id=(p_data->>'id')::uuid;
  elsif p_action='favorite' then
-  delete from favorites where user_id=me.id and product_id=(p_data->>'id')::bigint;
-  if not found then insert into favorites values(me.id,(p_data->>'id')::bigint); end if;
+  delete from favorites where user_id=me.profile_id and product_id=(p_data->>'id')::bigint;
+  if not found then insert into favorites values(me.profile_id,(p_data->>'id')::bigint); end if;
  elsif p_action='register_event' then
   if me.role<>'customer' then raise exception 'Use a customer account to enter.'; end if;
   select * into ev from events where id=(p_data->>'event_id')::bigint for update;
   if ev.id is null or ev.status<>'Open' or ev.starts_at<=now() then raise exception 'Registration is closed.'; end if;
   if (select count(*) from registrations where event_id=ev.id and status='Registered')>=ev.capacity then raise exception 'This event is full.'; end if;
-  insert into registrations(event_id,user_id,team,fee) values(ev.id,me.id,trim(p_data->>'team'),ev.fee)
+  insert into registrations(event_id,user_id,team,fee) values(ev.id,me.profile_id,trim(p_data->>'team'),ev.fee)
   on conflict(event_id,user_id) do update set status='Registered',team=excluded.team,fee=excluded.fee where registrations.status='Withdrawn';
   if not found then raise exception 'You are already registered.'; end if;
  elsif p_action='withdraw_event' then
   select e.* into ev from events e join registrations g on g.event_id=e.id where g.id=(p_data->>'id')::uuid for update of e;
   if ev.status<>'Open' or ev.starts_at<=now() then raise exception 'Registration is closed.'; end if;
-  update registrations set status='Withdrawn' where id=(p_data->>'id')::uuid and user_id=me.id and not paid;
+  update registrations set status='Withdrawn' where id=(p_data->>'id')::uuid and user_id=me.profile_id and not paid;
   if not found then raise exception 'Only unpaid entries can be withdrawn.'; end if;
  elsif p_action='redeem' then
   if me.role<>'customer' then raise exception 'Customer membership required.'; end if;
   select * into rw from rewards where id=(p_data->>'id')::bigint for update;
   if rw.id is null or not rw.active or rw.stock<1 or me.points<rw.points then raise exception 'Not enough points or reward stock.'; end if;
-  update profiles set points=points-rw.points where id=me.id;
+  update profiles set points=points-rw.points where profile_id=me.profile_id;
   update rewards set stock=stock-1 where id=rw.id;
-  insert into redemptions(user_id,reward_id,name,points) values(me.id,rw.id,rw.name,rw.points);
-  insert into points_transactions(user_id,points,reason) values(me.id,-rw.points,'Redeemed '||rw.name);
+  insert into redemptions(user_id,reward_id,name,points) values(me.profile_id,rw.id,rw.name,rw.points);
+  insert into points_transactions(user_id,points,reason) values(me.profile_id,-rw.points,'Redeemed '||rw.name);
  elsif p_action='profile' then
-  update profiles set name=trim(p_data->>'name'),phone=left(p_data->>'phone',30) where id=me.id;
+  update profiles set name=trim(p_data->>'name'),phone=left(p_data->>'phone',30) where profile_id=me.profile_id;
  elsif p_action in ('pay','extend_paid','check_in','end_session','order_status','collect_reward','clock','leave','task','task_done','checklist','handover','ack','ticket','claim','resolve','reopen') then
   if me.role not in ('staff','admin') then raise exception 'Staff access required.'; end if;
   if p_action='pay' then
@@ -265,12 +621,12 @@ begin
     select user_id,fee into uid,amount from registrations where id=sid and status='Registered' and not paid for update;
    else raise exception 'Invalid payment source.'; end if;
    if uid is null then raise exception 'Already paid or no longer payable.'; end if;
-   select * into target from profiles where id=uid for update;
+   select * into target from profiles where profile_id=uid for update;
    disc:=amount*(case when target.spent>=100000 then 10 when target.spent>=30000 then 5 else 0 end)/100;
    if nullif(p_data->>'expected_total','')::int is distinct from amount-disc then raise exception 'The payment amount changed. Close and reopen payment to get a fresh quote.'; end if;
    earned:=(amount-disc)/100;
    insert into bills(user_id,kind,source_id,subtotal,discount,total,points) values(uid,p_data->>'kind',sid,amount,disc,amount-disc,earned);
-   update profiles set points=points+earned,spent=spent+amount-disc where id=uid;
+   update profiles set points=points+earned,spent=spent+amount-disc where profile_id=uid;
    insert into points_transactions(user_id,points,reason) values(uid,earned,'Counter payment');
    if p_data->>'kind'='Booking' then update bookings set paid=true,status='Confirmed' where id=sid;
    elsif p_data->>'kind'='Order' then update orders set paid=true where id=sid;
@@ -282,7 +638,7 @@ begin
    if b.id is null or not b.paid or b.status not in ('Confirmed','Active') or b.ends_at<=now() or n not in (30,60) then raise exception 'Choose a live paid booking and 30 or 60 extra minutes.'; end if;
    select * into r from resources where id=b.resource_id for update;
    if r.status<>'Available' then raise exception 'Space is not available.'; end if;
-   select * into target from profiles where id=b.user_id for update;
+   select * into target from profiles where profile_id=b.user_id for update;
    amount:=(r.rate*n+30)/60;
    disc:=amount*(case when target.spent>=100000 then 10 when target.spent>=30000 then 5 else 0 end)/100;
    if nullif(p_data->>'expected_total','')::int is distinct from amount-disc then raise exception 'The payment amount changed. Reopen the extension quote.'; end if;
@@ -290,7 +646,7 @@ begin
    update bookings set ends_at=ends_at+make_interval(mins=>n),total=total+amount where id=b.id;
    insert into booking_extensions(booking_id,minutes,amount) values(b.id,n,amount) returning id into oid;
    insert into bills(user_id,kind,source_id,subtotal,discount,total,points) values(b.user_id,'Extension',oid,amount,disc,amount-disc,earned);
-   update profiles set spent=spent+amount-disc,points=points+earned where id=b.user_id;
+   update profiles set spent=spent+amount-disc,points=points+earned where profile_id=b.user_id;
    insert into points_transactions(user_id,points,reason) values(b.user_id,earned,'Session extension payment');
    result:=jsonb_build_object('message','Cash received and session extended by '||n||' minutes.');
   elsif p_action='check_in' then
@@ -310,7 +666,7 @@ begin
    update redemptions set status='Collected' where id=(p_data->>'id')::uuid and status='Pending';
    if not found then raise exception 'Voucher already collected.'; end if;
   elsif p_action='clock' then
-   select * into sh from shifts where id=(p_data->>'id')::uuid and user_id=me.id and status='Scheduled' for update;
+   select * into sh from shifts where id=(p_data->>'id')::uuid and staff_id=me.profile_id and status='Scheduled' for update;
    if sh.id is null then raise exception 'Choose your scheduled shift.'; end if;
    if not exists(select 1 from attendance where shift_id=sh.id) then
     if now()<sh.starts_at-interval '30 minutes' or now()>=sh.ends_at then raise exception 'Clock in from 30 minutes before your shift until its end.'; end if;
@@ -321,34 +677,35 @@ begin
    end if;
   elsif p_action='leave' then
    if (p_data->>'day')::date<(now() at time zone 'Asia/Kuala_Lumpur')::date or length(trim(p_data->>'reason'))<3 then raise exception 'Choose a future date and reason.'; end if;
-   insert into leave_requests(user_id,day,reason) values(me.id,(p_data->>'day')::date,p_data->>'reason');
+   insert into leave_requests(staff_id,day,reason) values(me.profile_id,(p_data->>'day')::date,p_data->>'reason');
   elsif p_action='task' then
-   uid:=case when me.role='admin' then coalesce(nullif(p_data->>'user_id','')::uuid,me.id) else me.id end;
-   if not exists(select 1 from profiles where id=uid and active and role in ('staff','admin')) or length(trim(p_data->>'title'))<2 then raise exception 'Choose a staff account and task title.'; end if;
-   insert into tasks(user_id,title,day) values(uid,trim(p_data->>'title'),(p_data->>'day')::date);
+   uid:=case when me.role='admin' then coalesce(nullif(p_data->>'staff_id','')::uuid,nullif(p_data->>'user_id','')::uuid,me.profile_id) else me.profile_id end;
+   if not exists(select 1 from profiles where profile_id=uid and active and role in ('staff','admin')) or length(trim(p_data->>'title'))<2 then raise exception 'Choose a staff account and task title.'; end if;
+   insert into tasks(staff_id,title,day) values(uid,trim(p_data->>'title'),(p_data->>'day')::date);
   elsif p_action='task_done' then
-   update tasks set done=not done where id=(p_data->>'id')::uuid and (user_id=me.id or me.role='admin');
+   update tasks set done=not done where id=(p_data->>'id')::uuid and (staff_id=me.profile_id or me.role='admin');
   elsif p_action='checklist' then
    if p_data->>'item' not in ('Sanitize desks','Test headsets','Check network','Count cues & balls','Stock drinks','Closing safety check') then raise exception 'Unknown checklist item.'; end if;
-   delete from checklist c where c.user_id=me.id and c.day=(now() at time zone 'Asia/Kuala_Lumpur')::date and c.item=p_data->>'item';
-   if not found then insert into checklist values(me.id,(now() at time zone 'Asia/Kuala_Lumpur')::date,p_data->>'item'); end if;
+   delete from checklist c where c.staff_id=me.profile_id and c.day=(now() at time zone 'Asia/Kuala_Lumpur')::date and c.item=p_data->>'item';
+   if not found then insert into checklist(checklist_id,staff_id,day,item)
+    values(gen_random_uuid(),me.profile_id,(now() at time zone 'Asia/Kuala_Lumpur')::date,p_data->>'item'); end if;
   elsif p_action='handover' then
    if length(trim(p_data->>'title'))<2 or length(trim(p_data->>'note'))<2 then raise exception 'Enter a title and note.'; end if;
-   insert into handovers(user_id,title,note,category) values(me.id,p_data->>'title',p_data->>'note',p_data->>'category');
+   insert into handovers(staff_id,title,note,category) values(me.profile_id,p_data->>'title',p_data->>'note',p_data->>'category');
   elsif p_action='ack' then
-   if not exists(select 1 from handovers where id=(p_data->>'id')::uuid and user_id<>me.id) then raise exception 'Acknowledge another colleague’s note.'; end if;
-   insert into handover_reads values((p_data->>'id')::uuid,me.id) on conflict do nothing;
+   if not exists(select 1 from handovers where id=(p_data->>'id')::uuid and staff_id<>me.profile_id) then raise exception 'Acknowledge another colleague’s note.'; end if;
+   insert into handover_reads values((p_data->>'id')::uuid,me.profile_id) on conflict do nothing;
   elsif p_action='ticket' then
    if length(trim(p_data->>'asset'))<2 or length(trim(p_data->>'title'))<2 then raise exception 'Enter the equipment and issue.'; end if;
-   insert into tickets(user_id,asset,title,priority) values(me.id,p_data->>'asset',p_data->>'title',p_data->>'priority');
+   insert into tickets(staff_id,asset,title,priority) values(me.profile_id,p_data->>'asset',p_data->>'title',p_data->>'priority');
   else
    select * into tk from tickets where id=(p_data->>'id')::uuid for update;
    if tk.id is null then raise exception 'Issue not found.'; end if;
-   if p_action='claim' and tk.status='Open' then update tickets set assigned_user=me.id,status='In progress' where id=tk.id;
-   elsif p_action='resolve' and tk.status='In progress' and (tk.assigned_user=me.id or me.role='admin') and length(trim(p_data->>'resolution'))>=3 then
+   if p_action='claim' and tk.status='Open' then update tickets set assigned_staff=me.profile_id,status='In progress' where id=tk.id;
+   elsif p_action='resolve' and tk.status='In progress' and (tk.assigned_staff=me.profile_id or me.role='admin') and length(trim(p_data->>'resolution'))>=3 then
     update tickets set status='Resolved',resolution=p_data->>'resolution' where id=tk.id;
-   elsif p_action='reopen' and tk.status='Resolved' and (tk.user_id=me.id or tk.assigned_user=me.id or me.role='admin') then
-    update tickets set status='Open',assigned_user=null,resolution='' where id=tk.id;
+   elsif p_action='reopen' and tk.status='Resolved' and (tk.staff_id=me.profile_id or tk.assigned_staff=me.profile_id or me.role='admin') then
+    update tickets set status='Open',assigned_staff=null,resolution='' where id=tk.id;
    else raise exception 'This issue cannot be changed. Resolution requires a note and the assigned staff member.'; end if;
   end if;
  elsif p_action in ('save_resource','save_product','restock','save_event','save_reward','save_category','schedule','weekly_roster','void_bill','member_profile','cancel_shift','leave_decision','member_status','bracket','winner') then
@@ -382,13 +739,13 @@ begin
    if bid is null then insert into rewards(name,points,stock) values(p_data->>'name',(p_data->>'points')::int,(p_data->>'stock')::int);
    else update rewards set name=p_data->>'name',points=(p_data->>'points')::int,stock=(p_data->>'stock')::int,active=(p_data->>'active')::boolean where id=bid; end if;
   elsif p_action='schedule' then
-   uid:=(p_data->>'user_id')::uuid; st:=(p_data->>'starts_at')::timestamptz; en:=(p_data->>'ends_at')::timestamptz;
-   if not exists(select 1 from profiles where id=uid and active and role in ('staff','admin')) or en>st+interval '16 hours' or st<now() then raise exception 'Choose active staff and a future shift of at most 16 hours.'; end if;
-   if exists(select 1 from leave_requests where user_id=uid and status='Approved' and tstzrange(day::timestamp at time zone 'Asia/Kuala_Lumpur',(day+1)::timestamp at time zone 'Asia/Kuala_Lumpur','[)') && tstzrange(st,en,'[)')) then raise exception 'Employee is on approved leave.'; end if;
-   insert into shifts(user_id,starts_at,ends_at) values(uid,st,en);
+   uid:=coalesce(nullif(p_data->>'staff_id','')::uuid,nullif(p_data->>'user_id','')::uuid); st:=(p_data->>'starts_at')::timestamptz; en:=(p_data->>'ends_at')::timestamptz;
+   if not exists(select 1 from profiles where profile_id=uid and active and role in ('staff','admin')) or en>st+interval '16 hours' or st<now() then raise exception 'Choose active staff and a future shift of at most 16 hours.'; end if;
+   if exists(select 1 from leave_requests where staff_id=uid and status='Approved' and tstzrange(day::timestamp at time zone 'Asia/Kuala_Lumpur',(day+1)::timestamp at time zone 'Asia/Kuala_Lumpur','[)') && tstzrange(st,en,'[)')) then raise exception 'Employee is on approved leave.'; end if;
+   insert into shifts(staff_id,starts_at,ends_at) values(uid,st,en);
   elsif p_action='weekly_roster' then
-   uid:=(p_data->>'user_id')::uuid;
-   perform 1 from profiles where id=uid and active and role in ('staff','admin') for update;
+   uid:=coalesce(nullif(p_data->>'staff_id','')::uuid,nullif(p_data->>'user_id','')::uuid);
+   perform 1 from profiles where profile_id=uid and active and role in ('staff','admin') for update;
    if not found then raise exception 'Choose an active staff member.'; end if;
    if p_data->>'pattern' not in ('Weekdays','Every day','Weekend') then raise exception 'Choose a working-days pattern.'; end if;
    for j in 0..6 loop
@@ -398,14 +755,14 @@ begin
     en:=(day_value+(p_data->>'end_time')::time) at time zone 'Asia/Kuala_Lumpur';
     if en<=st then en:=en+interval '1 day'; end if;
     if st<now() or en>st+interval '16 hours' then raise exception 'Choose future shifts of at most 16 hours.'; end if;
-    if exists(select 1 from leave_requests where user_id=uid and status='Approved' and tstzrange(day::timestamp at time zone 'Asia/Kuala_Lumpur',(day+1)::timestamp at time zone 'Asia/Kuala_Lumpur','[)') && tstzrange(st,en,'[)')) then raise exception 'Employee is on leave. No shifts were created.'; end if;
-    insert into shifts(user_id,starts_at,ends_at) values(uid,st,en);
+    if exists(select 1 from leave_requests where staff_id=uid and status='Approved' and tstzrange(day::timestamp at time zone 'Asia/Kuala_Lumpur',(day+1)::timestamp at time zone 'Asia/Kuala_Lumpur','[)') && tstzrange(st,en,'[)')) then raise exception 'Employee is on leave. No shifts were created.'; end if;
+    insert into shifts(staff_id,starts_at,ends_at) values(uid,st,en);
    end loop;
    result:=jsonb_build_object('message','Weekly roster created.');
   elsif p_action='void_bill' then
    select * into invoice from bills where id=(p_data->>'bill_id')::uuid and status='Paid' for update;
    if invoice.id is null or length(trim(p_data->>'reason'))<3 then raise exception 'Choose a paid bill and enter a reason.'; end if;
-   select * into target from profiles where id=invoice.user_id for update;
+   select * into target from profiles where profile_id=invoice.user_id for update;
    if target.points<invoice.points then raise exception 'Earned points have already been spent. Cannot void this payment.'; end if;
    if invoice.kind='Booking' then
     if exists(select 1 from booking_extensions where booking_id=invoice.source_id) then raise exception 'An extended booking cannot be voided here.'; end if;
@@ -416,20 +773,20 @@ begin
    else raise exception 'Session extensions cannot be voided after time has been allocated.'; end if;
    if not found then raise exception 'Only unfulfilled payments can be voided. Resolve used services with the manager.'; end if;
    update bills set status='Void',void_reason=p_data->>'reason' where id=invoice.id;
-   update profiles set points=points-invoice.points,spent=spent-invoice.total where id=invoice.user_id;
+   update profiles set points=points-invoice.points,spent=spent-invoice.total where profile_id=invoice.user_id;
    insert into points_transactions(user_id,points,reason) values(invoice.user_id,-invoice.points,'Voided counter payment');
    result:=jsonb_build_object('message','Payment voided. Return any cash to the customer and reconcile the till.');
   elsif p_action='member_profile' then
-   update profiles set name=trim(p_data->>'name'),phone=p_data->>'phone' where id=(p_data->>'user_id')::uuid and role='customer';
+   update profiles set name=trim(p_data->>'name'),phone=p_data->>'phone' where profile_id=coalesce(nullif(p_data->>'profile_id','')::uuid,nullif(p_data->>'user_id','')::uuid) and role='customer';
   elsif p_action='cancel_shift' then
    update shifts set status='Cancelled' where id=(p_data->>'shift_id')::uuid and starts_at>now() and not exists(select 1 from attendance where shift_id=(p_data->>'shift_id')::uuid);
    if not found then raise exception 'Only upcoming shifts without attendance can be cancelled.'; end if;
   elsif p_action='leave_decision' then
    if p_data->>'status' not in ('Approved','Declined') then raise exception 'Invalid leave decision.'; end if;
-   if p_data->>'status'='Approved' and exists(select 1 from shifts s join leave_requests l on l.user_id=s.user_id where l.id=(p_data->>'leave_id')::uuid and s.status='Scheduled' and tstzrange(s.starts_at,s.ends_at,'[)') && tstzrange(l.day::timestamp at time zone 'Asia/Kuala_Lumpur',(l.day+1)::timestamp at time zone 'Asia/Kuala_Lumpur','[)')) then raise exception 'Cancel overlapping shifts before approving leave.'; end if;
+   if p_data->>'status'='Approved' and exists(select 1 from shifts s join leave_requests l on l.staff_id=s.staff_id where l.id=(p_data->>'leave_id')::uuid and s.status='Scheduled' and tstzrange(s.starts_at,s.ends_at,'[)') && tstzrange(l.day::timestamp at time zone 'Asia/Kuala_Lumpur',(l.day+1)::timestamp at time zone 'Asia/Kuala_Lumpur','[)')) then raise exception 'Cancel overlapping shifts before approving leave.'; end if;
    update leave_requests set status=p_data->>'status' where id=(p_data->>'leave_id')::uuid and status='Pending';
   elsif p_action='member_status' then
-   update profiles set active=(p_data->>'active')::boolean where id=(p_data->>'user_id')::uuid and role='customer';
+   update profiles set active=(p_data->>'active')::boolean where profile_id=coalesce(nullif(p_data->>'profile_id','')::uuid,nullif(p_data->>'user_id','')::uuid) and role='customer';
   elsif p_action='bracket' then
    select * into ev from events where id=(p_data->>'event_id')::bigint for update;
    if ev.id is null or ev.status<>'Open' then raise exception 'Choose an open event.'; end if;
@@ -458,7 +815,7 @@ begin
   end if;
  else raise exception 'Unknown action.';
  end if;
- insert into requests values(me.id,p_request,result);
+ insert into requests values(me.profile_id,p_request,result);
  return result;
 exception when exclusion_violation then raise exception 'That time overlaps an existing booking, event or shift. Choose another time.';
 end $$;
@@ -470,11 +827,11 @@ do $$ declare t text; begin
   execute format('revoke all on public.%I from anon, authenticated',t);
  end loop;
 end $$;
-revoke all on function public.create_profile(), public.expire_bookings(), public.ctfly_catalog(), public.ctfly_snapshot(), public.ctfly_action(text,jsonb,uuid) from public,anon,authenticated;
+revoke all on function public.expire_bookings(), public.ctfly_catalog(), public.ctfly_snapshot(), public.ctfly_action(text,jsonb,uuid) from public,anon,authenticated;
 revoke all on function public.ctfly_quote(text,uuid) from public,anon,authenticated;
 grant execute on function public.ctfly_catalog() to anon,authenticated;
-grant execute on function public.ctfly_snapshot(), public.ctfly_action(text,jsonb,uuid) to authenticated;
-grant execute on function public.ctfly_quote(text,uuid) to authenticated;
+grant execute on function public.ctfly_snapshot(), public.ctfly_action(text,jsonb,uuid) to anon, authenticated;
+grant execute on function public.ctfly_quote(text,uuid) to anon, authenticated;
 
 insert into resources(name,kind,zone,description,rate) select 'PC-'||lpad(i::text,2,'0'),'PC',case when i>12 then 'VIP' else 'Standard' end,case when i>12 then 'RTX 4070 · Ryzen 7 · 240 Hz' else 'RTX 3060 · Ryzen 5 · 144 Hz' end,case when i>12 then 1000 else 600 end from generate_series(1,16) i;
 insert into resources(name,kind,zone,description,capacity,rate) values
@@ -663,7 +1020,7 @@ select kind,zone,capacity,rate,count(*) from public.resources
 -- Section: settings-feedback
 create table if not exists public.app_feedback (
  id uuid primary key default gen_random_uuid(),
- user_id uuid not null references public.profiles(id),
+ user_id uuid not null references public."User"(user_id),
  title text not null check(char_length(btrim(title)) between 3 and 120),
  body text not null check(char_length(btrim(body)) between 10 and 2000),
  category text not null check(category in ('Issue','Suggestion','Other')),
@@ -671,7 +1028,7 @@ create table if not exists public.app_feedback (
  status text not null default 'New' check(status in ('New','Reviewed','Resolved')),
  created_at timestamptz not null default now(),
  updated_at timestamptz,
- updated_by uuid references public.profiles(id)
+ updated_by uuid references public.staff(staff_id)
 );
 create index if not exists app_feedback_created_idx on public.app_feedback(created_at desc);
 create index if not exists app_feedback_user_idx on public.app_feedback(user_id,created_at desc);
@@ -683,8 +1040,8 @@ do $$
 declare definition text; addition text := $patch$
  -- app_feedback_snapshot_v1
  result := result || jsonb_build_object('feedback',coalesce((select jsonb_agg(f order by f.created_at desc)
- from (select a.*,p.name as customer_name from app_feedback a join profiles p on p.id=a.user_id
- where a.user_id=me.id or crew order by a.created_at desc limit 300) f),'[]'::jsonb));
+ from (select a.*,p.name as customer_name from app_feedback a join profiles p on p.profile_id=a.user_id
+ where a.user_id=me.profile_id or crew order by a.created_at desc limit 300) f),'[]'::jsonb));
  return result;$patch$;
 begin
  definition:=pg_get_functiondef('public.ctfly_snapshot()'::regprocedure);
@@ -707,13 +1064,13 @@ declare definition text; addition text := $patch$
    raise exception 'Choose a category and rating, a title of 3-120 characters, and feedback of 10-2000 characters.';
   end if;
   insert into app_feedback(user_id,title,body,category,rating)
-   values(me.id,btrim(p_data->>'title'),btrim(p_data->>'body'),p_data->>'category',(p_data->>'rating')::int)
+   values(me.profile_id,btrim(p_data->>'title'),btrim(p_data->>'body'),p_data->>'category',(p_data->>'rating')::int)
    returning id into oid;
   result:=jsonb_build_object('message','Feedback sent. Thank you!','id',oid);
  elsif p_action='feedback_status' then
   if me.role not in ('staff','admin') then raise exception 'Staff access required.'; end if;
   if coalesce(p_data->>'status','') not in ('Reviewed','Resolved') then raise exception 'Choose Reviewed or Resolved.'; end if;
-  update app_feedback set status=p_data->>'status',updated_at=now(),updated_by=me.id
+  update app_feedback set status=p_data->>'status',updated_at=now(),updated_by=me.profile_id
    where id=(p_data->>'id')::uuid;
   if not found then raise exception 'Feedback no longer exists.'; end if;
   result:=jsonb_build_object('message','Feedback status updated.');
@@ -745,7 +1102,7 @@ alter table public.bookings alter column hold_expires_at set default now()+inter
 alter table public.orders alter column hold_expires_at set default now()+interval '10 minutes';
 alter table public.registrations alter column hold_expires_at set default now()+interval '10 minutes';
 create table public.test_payments (
- id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles,
+ id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
  kind text not null check(kind in ('Booking','Order','Event')), source_id uuid not null,
  method text not null check(method in ('TNG','FPX','Card')),
  environment text not null default 'test' check(environment='test'),
@@ -765,7 +1122,7 @@ alter table public.test_payments enable row level security;
 revoke all on public.test_payments from public,anon,authenticated;
 
 create function private.restore_test_order(p_id uuid) returns void
-language plpgsql set search_path=public,pg_temp as $$
+language plpgsql set search_path=public, extensions, pg_temp as $$
 declare i record;
 begin
  for i in select product_id,qty from order_items where order_id=p_id order by product_id loop
@@ -775,7 +1132,7 @@ begin
 end $$;
 
 create function private.expire_test_holds() returns void
-language plpgsql set search_path=public,pg_temp as $$
+language plpgsql set search_path=public, extensions, pg_temp as $$
 declare held record;
 begin
  update bookings set status='Expired' where not paid and status='Reserved' and hold_expires_at<=now();
@@ -793,7 +1150,7 @@ end $$;
 
 -- Caller already owns the account lock; source locks precede payment locks.
 create function private.test_quote(p_kind text,p_id uuid,p_uid uuid) returns jsonb
-language plpgsql set search_path=public,pg_temp as $$
+language plpgsql set search_path=public, extensions, pg_temp as $$
 declare amount int; deadline timestamptz; lines jsonb; spending int; deduction int;
 begin
  if p_kind='Booking' then
@@ -813,33 +1170,33 @@ begin
   update registrations set hold_expires_at=deadline where id=p_id and user_id=p_uid and hold_expires_at is null;
  else raise exception 'Choose Booking, Order or Event.'; end if;
  if amount is null or deadline<=now() then raise exception 'Already paid, cancelled or checkout hold expired.'; end if;
- select spent into spending from profiles where id=p_uid;
+ select spent into spending from profiles where profile_id=p_uid;
  deduction:=amount*(case when spending>=100000 then 10 when spending>=30000 then 5 else 0 end)/100;
  return jsonb_build_object('environment','test','provider','simulator','kind',p_kind,'source_id',p_id,'subtotal',amount,'discount',deduction,'total',amount-deduction,'points',(amount-deduction)/100,'items',lines,'expires_at',deadline);
 end $$;
 
 create function private.test_payment_action(p_action text,p_data jsonb) returns jsonb
-language plpgsql set search_path=public,pg_temp as $$
+language plpgsql set search_path=public, extensions, pg_temp as $$
 declare me profiles; owner profiles; pay test_payments; q jsonb; chosen_kind text; sid uuid; bid uuid; outcome text; allowed boolean;
 begin
- select * into me from profiles where id=auth.uid() and active;
- if me.id is null then raise exception 'An active CTFLY account is required.'; end if;
+ select * into me from profiles where profile_id=public.ctfly_uid() and active;
+ if me.profile_id is null then raise exception 'An active CTFLY account is required.'; end if;
  if p_action in ('test_quote','test_checkout') then
   if me.role<>'customer' then raise exception 'Use a customer account to pay online.'; end if;
   chosen_kind:=p_data->>'kind'; sid:=(p_data->>'id')::uuid;
-  q:=private.test_quote(chosen_kind,sid,me.id);
+  q:=private.test_quote(chosen_kind,sid,me.profile_id);
   if p_action='test_quote' then return q||jsonb_build_object('message','No money will be charged.'); end if;
   if coalesce(p_data->>'method','') not in ('TNG','FPX','Card') then raise exception 'Choose a payment method.'; end if;
   if (p_data->>'expected_total')::int is distinct from (q->>'total')::int then raise exception 'Amount changed. Reload checkout.'; end if;
-  select * into pay from test_payments where test_payments.kind=chosen_kind and source_id=sid and user_id=me.id and status in ('Pending','Processing') for update;
+  select * into pay from test_payments where test_payments.kind=chosen_kind and source_id=sid and user_id=me.profile_id and status in ('Pending','Processing') for update;
   if pay.id is null then
    insert into test_payments(user_id,kind,source_id,method,subtotal,discount,total,points,items,expires_at)
-   values(me.id,chosen_kind,sid,p_data->>'method',(q->>'subtotal')::int,(q->>'discount')::int,(q->>'total')::int,(q->>'points')::int,q->'items',(q->>'expires_at')::timestamptz) returning * into pay;
+   values(me.profile_id,chosen_kind,sid,p_data->>'method',(q->>'subtotal')::int,(q->>'discount')::int,(q->>'total')::int,(q->>'points')::int,q->'items',(q->>'expires_at')::timestamptz) returning * into pay;
   end if;
  else
   select * into pay from test_payments where id=(p_data->>'id')::uuid;
-  if pay.id is null or (pay.user_id<>me.id and not(p_action='test_refund' and me.role in ('staff','admin'))) then raise exception 'Payment not found.'; end if;
-  select * into owner from profiles where id=pay.user_id for update;
+  if pay.id is null or (pay.user_id<>me.profile_id and not(p_action='test_refund' and me.role in ('staff','admin'))) then raise exception 'Payment not found.'; end if;
+  select * into owner from profiles where profile_id=pay.user_id for update;
   -- Lock source first, including terminal rows, to serialize counter collection and refunds.
   if pay.kind='Booking' then perform 1 from bookings where id=pay.source_id for update;
   elsif pay.kind='Order' then perform 1 from orders where id=pay.source_id for update;
@@ -855,7 +1212,7 @@ begin
    else update registrations set paid=false,status='Withdrawn' where id=pay.source_id and paid and status='Registered' and exists(select 1 from events where id=registrations.event_id and status='Open' and starts_at>now()); allowed:=found;
    end if;
    if not allowed then raise exception 'This service has already started or been fulfilled. A refund is unavailable.'; end if;
-   update profiles set test_points=test_points-pay.points,test_spent=test_spent-pay.total where id=pay.user_id;
+   update profiles set test_points=test_points-pay.points,test_spent=test_spent-pay.total where profile_id=pay.user_id;
    update bills set status='Void',void_reason='Payment refunded.' where id=pay.bill_id and environment='test';
    update test_payments set status='Refunded',settled_at=now() where id=pay.id returning * into pay;
   elsif p_action='test_resolve' then
@@ -868,7 +1225,7 @@ begin
      if (q->>'subtotal')::int<>pay.subtotal then raise exception 'Amount changed. Cancel and restart checkout.'; end if;
      insert into bills(user_id,kind,source_id,subtotal,discount,total,points,method,environment,payment_reference)
       values(pay.user_id,pay.kind,pay.source_id,pay.subtotal,pay.discount,pay.total,pay.points,pay.method,'test',pay.reference) returning id into bid;
-     update profiles set test_points=test_points+pay.points,test_spent=test_spent+pay.total where id=pay.user_id;
+     update profiles set test_points=test_points+pay.points,test_spent=test_spent+pay.total where profile_id=pay.user_id;
      if pay.kind='Booking' then update bookings set paid=true,status='Confirmed' where id=pay.source_id;
      elsif pay.kind='Order' then update orders set paid=true where id=pay.source_id;
      else update registrations set paid=true where id=pay.source_id; end if;
@@ -891,15 +1248,15 @@ do $$ declare definition text; begin
  definition:=pg_get_functiondef('public.ctfly_action(text,jsonb,uuid)'::regprocedure);
  if position('if p_action=''feedback'' then' in definition)=0 then raise exception 'Apply feedback migration first.'; end if;
  definition:=replace(definition,'if p_action=''feedback'' then', 'if p_action in (''test_quote'',''test_checkout'',''test_resolve'',''test_refund'') then result:=private.test_payment_action(p_action,p_data); elsif p_action=''feedback'' then');
- definition:=replace(definition,'select * into target from profiles where id=invoice.user_id for update;', 'if invoice.environment=''test'' then raise exception ''Open payment details to request a refund.''; end if; select * into target from profiles where id=invoice.user_id for update;');
+ definition:=replace(definition,'select * into target from profiles where profile_id=invoice.user_id for update;', 'if invoice.environment=''test'' then raise exception ''Open payment details to request a refund.''; end if; select * into target from profiles where profile_id=invoice.user_id for update;');
  -- Re-registration receives a fresh hold; event result supplies its source ID.
  definition:=replace(definition,'fee=excluded.fee where registrations.status=''Withdrawn''','fee=excluded.fee,hold_expires_at=now()+interval ''10 minutes'' where registrations.status=''Withdrawn''');
- definition:=replace(definition,'if not found then raise exception ''You are already registered.''; end if;', 'if not found then raise exception ''You are already registered.''; end if; select id into oid from registrations where event_id=ev.id and user_id=me.id; result:=jsonb_build_object(''id'',oid,''message'',''Registered. Complete checkout.'');');
+ definition:=replace(definition,'if not found then raise exception ''You are already registered.''; end if;', 'if not found then raise exception ''You are already registered.''; end if; select id into oid from registrations where event_id=ev.id and user_id=me.profile_id; result:=jsonb_build_object(''id'',oid,''message'',''Registered. Complete checkout.'');');
  execute definition;
  definition:=pg_get_functiondef('public.ctfly_snapshot()'::regprocedure);
  definition:=replace(definition,'return result;', $patch$
  result:=result||jsonb_build_object('payment_mode','simulation','test_payments',coalesce((select jsonb_agg(x order by x.created_at desc) from
- (select t.*,p.name as customer_name,(select to_jsonb(b) from bills b where b.id=t.bill_id) as receipt from test_payments t join profiles p on p.id=t.user_id where t.user_id=me.id or crew order by t.created_at desc limit 300) x),'[]'::jsonb));
+ (select t.*,p.name as customer_name,(select to_jsonb(b) from bills b where b.id=t.bill_id) as receipt from test_payments t join profiles p on p.profile_id=t.user_id where t.user_id=me.profile_id or crew order by t.created_at desc limit 300) x),'[]'::jsonb));
  return result;$patch$);
  execute definition;
 end $$;
@@ -913,13 +1270,13 @@ alter table public.events add column prize_second text not null default 'To be a
 alter table public.events add column prize_third text not null default 'To be announced' check(length(prize_third)<=800);
 alter table public.events add column prize_consolation text not null default 'To be announced' check(length(prize_consolation)<=800);
 alter table public.events add column registration_closes_at timestamptz;
-alter table public.events add column created_by uuid references public.profiles;
+alter table public.events add column created_by uuid references public.staff(staff_id);
 create index events_creator_idx on public.events(created_by);
 alter table public.events drop constraint events_status_check;
 alter table public.events add constraint events_status_check check(status in ('Draft','Open','Running','Completed','Cancelled'));
 
 create function private.require_number(d jsonb,k text,label text,lo int,hi int) returns int
-language plpgsql set search_path=public,pg_temp as $$
+language plpgsql set search_path=public, extensions, pg_temp as $$
 declare n numeric;
 begin
  if coalesce(d->>k,'')!~'^-?[0-9]+$' then raise exception '%: enter a whole number.',label; end if;
@@ -929,7 +1286,7 @@ begin
 end $$;
 
 create function private.validate_club_input(a text,d jsonb) returns void
-language plpgsql set search_path=public,pg_temp as $$
+language plpgsql set search_path=public, extensions, pg_temp as $$
 declare f record; label text; st timestamptz; en timestamptz; r resources; day date;
 begin
  for f in select * from (values
@@ -975,11 +1332,11 @@ begin
 end $$;
 
 create function private.save_club_event(d jsonb) returns jsonb
-language plpgsql set search_path=public,pg_temp as $$
+language plpgsql set search_path=public, extensions, pg_temp as $$
 declare me profiles; old events; eid bigint; st timestamptz; en timestamptz; close_at timestamptz; fee_value int; cap int; state text; poster text; k text;
 begin
- select * into me from profiles where id=auth.uid() and active and role in ('staff','admin');
- if me.id is null then raise exception 'Staff access required to create competitions.'; end if;
+ select * into me from profiles where profile_id=public.ctfly_uid() and active and role in ('staff','admin');
+ if me.profile_id is null then raise exception 'Staff access required to create competitions.'; end if;
  if coalesce(length(btrim(d->>'name')),0) not between 3 and 120 then raise exception 'Competition name: enter 3–120 characters.'; end if;
  if coalesce(length(btrim(d->>'game')),0) not between 2 and 80 then raise exception 'Game: enter 2–80 characters.'; end if;
  st:=(d->>'starts_at')::timestamptz;en:=(d->>'ends_at')::timestamptz;
@@ -1008,7 +1365,7 @@ begin
     prize_first=coalesce(d->>'prize_first',old.prize_first),prize_second=coalesce(d->>'prize_second',old.prize_second),prize_third=coalesce(d->>'prize_third',old.prize_third),prize_consolation=coalesce(d->>'prize_consolation',old.prize_consolation) where id=old.id returning id into eid;
  else
   insert into events(name,game,starts_at,ends_at,registration_closes_at,fee,capacity,status,description,poster_url,prize_first,prize_second,prize_third,prize_consolation,created_by)
-  values(btrim(d->>'name'),btrim(d->>'game'),st,en,close_at,fee_value,cap,state,coalesce(d->>'description',''),poster,coalesce(d->>'prize_first','To be announced'),coalesce(d->>'prize_second','To be announced'),coalesce(d->>'prize_third','To be announced'),coalesce(d->>'prize_consolation','No consolation prize'),me.id) returning id into eid;
+  values(btrim(d->>'name'),btrim(d->>'game'),st,en,close_at,fee_value,cap,state,coalesce(d->>'description',''),poster,coalesce(d->>'prize_first','To be announced'),coalesce(d->>'prize_second','To be announced'),coalesce(d->>'prize_third','To be announced'),coalesce(d->>'prize_consolation','No consolation prize'),me.profile_id) returning id into eid;
  end if;
  return jsonb_build_object('id',eid,'message',case when state='Draft' then 'Competition saved as draft.' else 'Competition updated.' end);
 end $$;
@@ -1019,24 +1376,24 @@ create table public.promotions (
  amount int not null check(amount>=0), resource_kind text not null default 'All', max_minutes int not null default 0 check(max_minutes between 0 and 180),
  starts_at timestamptz not null, ends_at timestamptz not null check(ends_at>starts_at), usage_limit int not null check(usage_limit between 1 and 1000000),
  per_user_limit int not null default 1 check(per_user_limit between 1 and 100), active boolean not null default true,
- target_user uuid references public.profiles, created_by uuid not null references public.profiles, created_at timestamptz not null default now());
+ target_user uuid references public."User"(user_id), created_by uuid not null references public.staff(staff_id), created_at timestamptz not null default now());
 create index promotions_target_idx on public.promotions(target_user);create index promotions_creator_idx on public.promotions(created_by);
 alter table public.promotions enable row level security;revoke all on public.promotions from public,anon,authenticated;
 alter table public.test_payments add column promotion_id uuid references public.promotions;
 alter table public.test_payments add column promo_code text;
 create index test_payments_promotion_idx on public.test_payments(promotion_id);
 create table public.promo_claims (
- payment_id uuid primary key references public.test_payments, promotion_id uuid not null references public.promotions,user_id uuid not null references public.profiles,
+ payment_id uuid primary key references public.test_payments, promotion_id uuid not null references public.promotions,user_id uuid not null references public."User"(user_id),
  status text not null check(status in ('Held','Redeemed','Released')),expires_at timestamptz not null,created_at timestamptz not null default now());
 create index promo_claims_promo_status_idx on public.promo_claims(promotion_id,status);
 create index promo_claims_user_idx on public.promo_claims(user_id,promotion_id,status);
 alter table public.promo_claims enable row level security;revoke all on public.promo_claims from public,anon,authenticated;
 
 create function private.save_promotion(d jsonb) returns jsonb
-language plpgsql set search_path=public,pg_temp as $$
+language plpgsql set search_path=public, extensions, pg_temp as $$
 declare me profiles; promo promotions; result_id uuid; amt int; lim int; peruser int; maxmins int; begin_at timestamptz; finish_at timestamptz; target uuid; benefit_type text; code_value text;
 begin
- select * into me from profiles where id=auth.uid() and active and role in ('staff','admin');if me.id is null then raise exception 'Staff access required to create promo codes.'; end if;
+ select * into me from profiles where profile_id=public.ctfly_uid() and active and role in ('staff','admin');if me.profile_id is null then raise exception 'Staff access required to create promo codes.'; end if;
  code_value:=upper(btrim(d->>'code'));if coalesce(code_value,'')!~'^[A-Z0-9-]{3,24}$' then raise exception 'Promo code: use 3–24 letters, numbers or hyphens.'; end if;
  if coalesce(length(btrim(d->>'title')),0) not between 3 and 120 then raise exception 'Promo title: enter 3–120 characters.'; end if;
  if coalesce(d->>'scope','') not in ('All','Booking','Order','Event') then raise exception 'Promo applies to: choose Booking, Order, Event or All.'; end if;
@@ -1049,18 +1406,18 @@ begin
  begin finish_at:=(d->>'ends_at')::timestamptz;exception when others then raise exception 'Promo expiry date / time is invalid.';end;
  if begin_at is null or finish_at is null or finish_at<=begin_at or finish_at<=now() then raise exception 'Promo expiry date / time must be in the future and later than its start.'; end if;
  target:=nullif(d->>'target_user','')::uuid;
- if target is not null and not exists(select 1 from profiles where id=target and active and role='customer') then raise exception 'Selected customer is unavailable. Refresh the customer list.'; end if;
+ if target is not null and not exists(select 1 from profiles where profile_id=target and active and role='customer') then raise exception 'Selected customer is unavailable. Refresh the customer list.'; end if;
  if nullif(d->>'id','') is not null then
   select * into promo from promotions where id=(d->>'id')::uuid for update;if promo.id is null then raise exception 'Promo code no longer exists.';end if;
   if exists(select 1 from promo_claims where promotion_id=promo.id and status in ('Held','Redeemed')) and (code_value<>promo.code or benefit_type<>promo.benefit or amt<>promo.amount or d->>'scope'<>promo.scope or target is distinct from promo.target_user or lim<promo.usage_limit or peruser<promo.per_user_limit or coalesce(d->>'resource_kind','All')<>promo.resource_kind or maxmins<>promo.max_minutes or begin_at<>promo.starts_at or finish_at<>promo.ends_at) then raise exception 'This code has payment claims. Keep its benefit, customer and limits, or create another code.';end if;
   update promotions set title=btrim(d->>'title'),code=code_value,scope=d->>'scope',benefit=benefit_type,amount=amt,resource_kind=coalesce(d->>'resource_kind','All'),max_minutes=maxmins,starts_at=begin_at,ends_at=finish_at,usage_limit=lim,per_user_limit=peruser,target_user=target,active=coalesce((d->>'active')::boolean,true) where id=promo.id returning id into result_id;
  else insert into promotions(code,title,scope,benefit,amount,resource_kind,max_minutes,starts_at,ends_at,usage_limit,per_user_limit,target_user,created_by)
- values(code_value,btrim(d->>'title'),d->>'scope',benefit_type,amt,coalesce(d->>'resource_kind','All'),maxmins,begin_at,finish_at,lim,peruser,target,me.id) returning id into result_id;end if;
+ values(code_value,btrim(d->>'title'),d->>'scope',benefit_type,amt,coalesce(d->>'resource_kind','All'),maxmins,begin_at,finish_at,lim,peruser,target,me.profile_id) returning id into result_id;end if;
  return jsonb_build_object('id',result_id,'message','Promo code saved.');
 end $$;
 
 create function private.apply_promotion(code_value text,q jsonb,uid uuid) returns jsonb
-language plpgsql set search_path=public,pg_temp as $$
+language plpgsql set search_path=public, extensions, pg_temp as $$
 declare promo promotions; deduction int; held_count int; customer_count int;
 begin
  if coalesce(btrim(code_value),'')='' then return q;end if;
@@ -1081,7 +1438,7 @@ begin
 end $$;
 
 create function private.sync_promo_claim() returns trigger
-language plpgsql set search_path=public,pg_temp as $$
+language plpgsql set search_path=public, extensions, pg_temp as $$
 begin
  if new.promotion_id is not null and new.status is distinct from old.status then
   perform 1 from promotions where id=new.promotion_id for update;
@@ -1097,10 +1454,10 @@ create trigger sync_promo_claim after update on public.test_payments for each ro
 -- Immutable purchase details; later resource edits or extensions cannot rewrite a receipt.
 alter table public.bills add column details jsonb not null default '{}'::jsonb;
 create function private.bill_details(b public.bills) returns jsonb
-language plpgsql set search_path=public,pg_temp as $$
+language plpgsql set search_path=public, extensions, pg_temp as $$
 declare d jsonb; session public.bookings; ext public.booking_extensions; ending timestamptz;
 begin
- d:=jsonb_build_object('customer_name',(select name from profiles where id=b.user_id),'currency','MYR');
+ d:=jsonb_build_object('customer_name',(select name from profiles where profile_id=b.user_id),'currency','MYR');
  if b.kind in ('Booking','Extension') then
   if b.kind='Extension' then select * into ext from booking_extensions where id=b.source_id;select * into session from bookings where id=ext.booking_id;
   else select * into session from bookings where id=b.source_id;end if;
@@ -1116,12 +1473,12 @@ begin
  return d;
 end $$;
 update public.bills b set details=private.bill_details(b);
-create function private.freeze_receipt() returns trigger language plpgsql set search_path=public,pg_temp as $$
+create function private.freeze_receipt() returns trigger language plpgsql set search_path=public, extensions, pg_temp as $$
 begin new.details:=private.bill_details(new);return new;end $$;
 create trigger freeze_receipt before insert on public.bills for each row execute function private.freeze_receipt();
 
 create table public.receipt_email_jobs (
- bill_id uuid primary key references public.bills,user_id uuid not null references public.profiles,
+ bill_id uuid primary key references public.bills,user_id uuid not null references public."User"(user_id),
  status text not null default 'Queued' check(status in ('Queued','Sending','Sent','NotConfigured','Failed','Unknown')),
  attempts int not null default 0,last_attempt timestamptz,last_error text not null default '',provider_id text,sent_at timestamptz,created_at timestamptz not null default now());
 create index receipt_mail_user_idx on public.receipt_email_jobs(user_id,created_at desc);
@@ -1130,12 +1487,12 @@ alter table public.receipt_email_jobs enable row level security;revoke all on pu
 create table private.mail_runtime(id boolean primary key default true check(id),worker_secret text not null,configured boolean not null default false);
 alter table private.mail_runtime enable row level security;revoke all on private.mail_runtime from public,anon,authenticated;
 insert into private.mail_runtime(worker_secret) values(replace(gen_random_uuid()::text||gen_random_uuid()::text,'-',''));
-create function private.queue_receipt() returns trigger language plpgsql set search_path=public,pg_temp as $$
+create function private.queue_receipt() returns trigger language plpgsql set search_path=public, extensions, pg_temp as $$
 begin insert into receipt_email_jobs(bill_id,user_id) values(new.id,new.user_id) on conflict do nothing;return new;end $$;
 create trigger queue_receipt after insert on public.bills for each row execute function private.queue_receipt();
-create function private.receipt_action(a text,d jsonb) returns jsonb language plpgsql set search_path=public,pg_temp as $$
+create function private.receipt_action(a text,d jsonb) returns jsonb language plpgsql set search_path=public, extensions, pg_temp as $$
 declare b bills;begin
- select * into b from bills where id=(d->>'id')::uuid and exists(select 1 from profiles where id=auth.uid() and active and (id=bills.user_id or role in ('staff','admin')));
+ select * into b from bills where id=(d->>'id')::uuid and exists(select 1 from profiles where profile_id=public.ctfly_uid() and active and (profile_id=bills.user_id or role in ('staff','admin')));
  if b.id is null then raise exception 'Receipt not found for this account.';end if;
  if a='receipt_email' then
   insert into receipt_email_jobs(bill_id,user_id) values(b.id,b.user_id) on conflict(bill_id) do update set status='Queued',last_error='' where receipt_email_jobs.status in ('NotConfigured','Failed');
@@ -1144,7 +1501,7 @@ declare b bills;begin
 end $$;
 -- Only the server's service role can invoke the worker. The additional private secret authenticates cron dispatch.
 create or replace function private.receipt_worker(secret_value text,operation text,d jsonb) returns jsonb
-language plpgsql security definer set search_path=public,pg_temp as $$
+language plpgsql security definer set search_path=public, extensions, pg_temp as $$
 declare jobs jsonb;state text;begin
  if not exists(select 1 from private.mail_runtime where worker_secret=secret_value) then raise exception 'Worker authentication failed.';end if;
  if operation='configure' then
@@ -1157,7 +1514,7 @@ declare jobs jsonb;state text;begin
   update receipt_email_jobs set status='Unknown',last_error='Sending was interrupted. Verify delivery before retrying.' where status='Sending' and last_attempt<now()-interval '5 minutes';
   -- Leave other receipts queued until a worker is ready to send them.
   with chosen as(select bill_id from receipt_email_jobs where status='Queued' order by created_at,bill_id for update skip locked limit 1),claimed as(update receipt_email_jobs j set status='Sending',attempts=attempts+1,last_attempt=now() from chosen where j.bill_id=chosen.bill_id returning j.*)
-  select coalesce(jsonb_agg(jsonb_build_object('bill',to_jsonb(b),'email',u.email)),'[]'::jsonb) into jobs from claimed j join bills b on b.id=j.bill_id join auth.users u on u.id=j.user_id;
+  select coalesce(jsonb_agg(jsonb_build_object('bill',to_jsonb(b),'email',u.email)),'[]'::jsonb) into jobs from claimed j join bills b on b.id=j.bill_id join public."User" u on u.user_id=j.user_id;
   return jobs;
  elsif operation='result' then
   state:=d->>'status';if state not in ('Sent','Failed','Unknown') then raise exception 'Invalid worker result.';end if;
@@ -1167,7 +1524,7 @@ declare jobs jsonb;state text;begin
  raise exception 'Invalid worker operation.';
 end $$;
 create function public.ctfly_receipt_worker(p_secret text,p_operation text,p_data jsonb default '{}'::jsonb) returns jsonb
-language sql security invoker set search_path=public,pg_temp as $$select private.receipt_worker(p_secret,p_operation,p_data)$$;
+language sql security invoker set search_path=public, extensions, pg_temp as $$select private.receipt_worker(p_secret,p_operation,p_data)$$;
 revoke all on function public.ctfly_receipt_worker(text,text,jsonb) from public,anon,authenticated;
 
 -- Upgrade existing authenticated APIs without replacing their ownership or request deduplication checks.
@@ -1184,20 +1541,20 @@ do $$ declare def text;begin
  def:=pg_get_functiondef('public.ctfly_catalog()'::regprocedure);def:=replace(def,'status<>''Cancelled''','status not in (''Cancelled'',''Draft'')');execute def;
  def:=pg_get_functiondef('public.ctfly_snapshot()'::regprocedure);
  def:=replace(def,'return result;', $patch$
- result:=result||jsonb_build_object('receipt_emails',coalesce((select jsonb_agg(to_jsonb(j)-'user_id' order by created_at desc) from receipt_email_jobs j where j.user_id=me.id or crew),'[]'::jsonb));
+ result:=result||jsonb_build_object('receipt_emails',coalesce((select jsonb_agg(to_jsonb(j)-'user_id' order by created_at desc) from receipt_email_jobs j where j.user_id=me.profile_id or crew),'[]'::jsonb));
  if crew then result:=result||jsonb_build_object('events',coalesce((select jsonb_agg(e order by starts_at desc) from events e),'[]'::jsonb),'promotions',coalesce((select jsonb_agg(to_jsonb(p)||jsonb_build_object('used',(select count(*) from promo_claims c where c.promotion_id=p.id and c.status='Redeemed'))) from promotions p),'[]'::jsonb));end if;
  return result;$patch$);execute def;
  def:=pg_get_functiondef('private.test_quote(text,uuid,uuid)'::regprocedure);
  def:=replace(def,'''detail'',b.starts_at,''price'',b.total','''detail'',b.starts_at,''resource_kind'',r.kind,''zone'',r.zone,''starts_at'',b.starts_at,''ends_at'',b.ends_at,''duration_minutes'',extract(epoch from b.ends_at-b.starts_at)::int/60,''price'',b.total');execute def;
  def:=pg_get_functiondef('private.test_payment_action(text,jsonb)'::regprocedure);
- def:=replace(def,'q:=private.test_quote(chosen_kind,sid,me.id);', $patch$
- if p_action='test_checkout' then select * into pay from test_payments where kind=chosen_kind and source_id=sid and user_id=me.id and status in ('Pending','Processing');
+ def:=replace(def,'q:=private.test_quote(chosen_kind,sid,me.profile_id);', $patch$
+ if p_action='test_checkout' then select * into pay from test_payments where kind=chosen_kind and source_id=sid and user_id=me.profile_id and status in ('Pending','Processing');
  if pay.id is not null then return jsonb_build_object('payment',to_jsonb(pay),'message','Existing checkout resumed.');end if;end if;
- q:=private.apply_promotion(p_data->>'promo_code',private.test_quote(chosen_kind,sid,me.id),me.id);$patch$);
+ q:=private.apply_promotion(p_data->>'promo_code',private.test_quote(chosen_kind,sid,me.profile_id),me.profile_id);$patch$);
  def:=replace(def, '(q->>''expires_at'')::timestamptz) returning * into pay;', $patch$(q->>'expires_at')::timestamptz) returning * into pay;
   if q->>'promotion_id' is not null then
    update test_payments set promotion_id=(q->>'promotion_id')::uuid,promo_code=q->>'promo_code' where id=pay.id returning * into pay;
-   insert into promo_claims(payment_id,promotion_id,user_id,status,expires_at) values(pay.id,pay.promotion_id,me.id,'Held',pay.expires_at);
+   insert into promo_claims(payment_id,promotion_id,user_id,status,expires_at) values(pay.id,pay.promotion_id,me.profile_id,'Held',pay.expires_at);
   end if;$patch$);
  def:=replace(def,'select * into pay from test_payments where id=pay.id for update;','if pay.promotion_id is not null then perform 1 from promotions where id=pay.promotion_id for update;end if; select * into pay from test_payments where id=pay.id for update;');execute def;
 end $$;
@@ -1212,7 +1569,7 @@ do $$ begin if to_regclass('storage.buckets') is not null then
 end if;end $$;
 -- Local database tests omit unavailable extensions; the hosted project has pg_net and pg_cron.
 do $$ begin if exists(select 1 from pg_available_extensions where name='pg_net') then create extension if not exists pg_net with schema extensions;end if;end $$;
-create function private.kick_receipt_worker() returns void language plpgsql security definer set search_path=public,pg_temp as $$
+create function private.kick_receipt_worker() returns void language plpgsql security definer set search_path=public, extensions, pg_temp as $$
 begin
  if private.project_url()<>'' and to_regprocedure('net.http_post(text,jsonb,jsonb,jsonb,integer)') is not null then
   perform net.http_post(url:=private.project_url()||'/functions/v1/club-services',headers:=jsonb_build_object('Content-Type','application/json','X-Receipt-Worker',(select worker_secret from private.mail_runtime)),body:='{"operation":"dispatch"}'::jsonb,timeout_milliseconds:=60000);
@@ -1270,7 +1627,7 @@ execute function private.dispatch_queued_receipt();
 alter table public.orders add column if not exists pickup_token uuid;
 alter table public.orders add column if not exists ready_at timestamptz;
 alter table public.orders add column if not exists received_at timestamptz;
-alter table public.orders add column if not exists received_by uuid references public.profiles;
+alter table public.orders add column if not exists received_by uuid references public.staff(staff_id);
 alter table public.orders drop constraint if exists orders_status_check;
 update public.orders set status='Received' where status='Delivered';
 alter table public.orders add constraint orders_status_check check(status in ('Pending','Preparing','Ready','Received','Cancelled'));
@@ -1279,7 +1636,7 @@ create index if not exists orders_received_by_idx on public.orders(received_by) 
 update public.orders set pickup_token=gen_random_uuid(),ready_at=coalesce(ready_at,now()) where status='Ready' and paid and pickup_token is null;
 
 create table if not exists public.order_notifications (
- id uuid primary key default gen_random_uuid(), user_id uuid not null references public.profiles,
+ id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
  order_id uuid not null unique references public.orders, created_at timestamptz not null default now(),read_at timestamptz
 );
 create index if not exists order_notifications_user_idx on public.order_notifications(user_id,created_at desc);
@@ -1287,7 +1644,7 @@ alter table public.order_notifications enable row level security;
 revoke all on public.order_notifications from public,anon,authenticated;
 
 create table if not exists private.user_push_devices (
- installation_id uuid primary key, user_id uuid not null references public.profiles,
+ installation_id uuid primary key, user_id uuid not null references public."User"(user_id),
  token text not null unique check(length(token) between 20 and 4096), language text not null check(language in ('en','zh','ms')),
  updated_at timestamptz not null default now()
 );
@@ -1298,7 +1655,7 @@ revoke all on private.user_push_devices from public,anon,authenticated;
 create table if not exists private.order_push_jobs (
  id uuid primary key default gen_random_uuid(), notice_id uuid not null references public.order_notifications,
  installation_id uuid not null references private.user_push_devices on delete cascade,
- user_id uuid not null references public.profiles, status text not null default 'Queued' check(status in ('Queued','Sending','Sent','Failed','Skipped')),
+ user_id uuid not null references public."User"(user_id), status text not null default 'Queued' check(status in ('Queued','Sending','Sent','Failed','Skipped')),
  attempts int not null default 0, next_attempt timestamptz not null default now(),last_attempt timestamptz,
  unique(notice_id,installation_id)
 );
@@ -1313,8 +1670,8 @@ create or replace function private.cafe_pickup_action(a text,d jsonb) returns js
 language plpgsql set search_path = '' as $$
 declare me public.profiles; o public.orders; token_value uuid; installation uuid;
 begin
- select * into me from public.profiles where id=auth.uid() and active;
- if me.id is null then raise exception 'Please sign in with an active CTFLY account.';end if;
+ select * into me from public.profiles where profile_id=public.ctfly_uid() and active;
+ if me.profile_id is null then raise exception 'Please sign in with an active CTFLY account.';end if;
  if a in ('pickup_preview','order_pickup') then
   if me.role not in ('staff','admin') then raise exception 'Staff access required.';end if;
   if coalesce(d->>'token','') !~ '^ctfly-pickup:[0-9a-fA-F-]{36}$' then raise exception 'This is not a café pickup QR.';end if;
@@ -1324,26 +1681,26 @@ begin
   if o.status='Received' then raise exception 'This order has already been collected.';end if;
   if not o.paid or o.status<>'Ready' then raise exception 'Only paid orders marked Ready can be collected.';end if;
   if a='order_pickup' then
-   update public.orders set status='Received',received_at=now(),received_by=me.id where id=o.id returning * into o;
+   update public.orders set status='Received',received_at=now(),received_by=me.profile_id where id=o.id returning * into o;
    update public.order_notifications set read_at=coalesce(read_at,now()) where order_id=o.id;
    update private.order_push_jobs set status='Skipped' where notice_id in (select id from public.order_notifications where order_id=o.id) and status in ('Queued','Failed');
   end if;
-  return jsonb_build_object('order',to_jsonb(o),'customer_name',(select name from public.profiles where id=o.user_id),'items',(select coalesce(jsonb_agg(jsonb_build_object('name',name,'qty',qty)),'[]'::jsonb) from public.order_items where order_id=o.id),'message',case when a='order_pickup' then 'Order collected. Enjoy your food!' else 'Pickup verified. Check the items before handover.' end);
+  return jsonb_build_object('order',to_jsonb(o),'customer_name',(select name from public.profiles where profile_id=o.user_id),'items',(select coalesce(jsonb_agg(jsonb_build_object('name',name,'qty',qty)),'[]'::jsonb) from public.order_items where order_id=o.id),'message',case when a='order_pickup' then 'Order collected. Enjoy your food!' else 'Pickup verified. Check the items before handover.' end);
  elsif a='register_push_device' then
   if me.role<>'customer' then raise exception 'Customer account required.';end if;
   installation:=(d->>'installation_id')::uuid;
   if installation is null or length(coalesce(d->>'token','')) not between 20 and 4096 or coalesce(d->>'language','') not in ('en','zh','ms') then raise exception 'Invalid notification device.';end if;
   delete from private.user_push_devices where token=d->>'token' and installation_id<>installation;
-  insert into private.user_push_devices(installation_id,user_id,token,language) values(installation,me.id,d->>'token',d->>'language')
+  insert into private.user_push_devices(installation_id,user_id,token,language) values(installation,me.profile_id,d->>'token',d->>'language')
   on conflict(installation_id) do update set user_id=excluded.user_id,token=excluded.token,language=excluded.language,updated_at=now();
   -- Bound inactive device registrations and avoid accumulating shared-device owners.
-  delete from private.user_push_devices where user_id=me.id and installation_id in (select installation_id from private.user_push_devices where user_id=me.id order by updated_at desc offset 5);
+  delete from private.user_push_devices where user_id=me.profile_id and installation_id in (select installation_id from private.user_push_devices where user_id=me.profile_id order by updated_at desc offset 5);
   return jsonb_build_object('message','Pickup notifications enabled.');
  elsif a='unregister_push_device' then
-  delete from private.user_push_devices where installation_id=(d->>'installation_id')::uuid and user_id=me.id;
+  delete from private.user_push_devices where installation_id=(d->>'installation_id')::uuid and user_id=me.profile_id;
   return jsonb_build_object('message','Notification device removed.');
  elsif a='read_order_notice' then
-  update public.order_notifications set read_at=coalesce(read_at,now()) where order_id=(d->>'order_id')::uuid and user_id=me.id;
+  update public.order_notifications set read_at=coalesce(read_at,now()) where order_id=(d->>'order_id')::uuid and user_id=me.profile_id;
   return jsonb_build_object('message','Notification read.');
  end if;
  raise exception 'Unsupported café action.';
@@ -1400,7 +1757,7 @@ do $$ declare def text; old_branch text;begin
  execute def;
  def:=pg_get_functiondef('public.ctfly_snapshot()'::regprocedure);
  if position('''order_notifications''' in def)=0 then
-  def:=replace(def,'return result;','result:=result||jsonb_build_object(''order_notifications'',coalesce((select jsonb_agg(to_jsonb(n) order by n.created_at desc) from public.order_notifications n where n.user_id=auth.uid() and n.created_at>now()-interval ''30 days''),''[]''::jsonb)); return result;');
+  def:=replace(def,'return result;','result:=result||jsonb_build_object(''order_notifications'',coalesce((select jsonb_agg(to_jsonb(n) order by n.created_at desc) from public.order_notifications n where n.user_id=public.ctfly_uid() and n.created_at>now()-interval ''30 days''),''[]''::jsonb)); return result;');
   execute def;
  end if;
 end $$;
@@ -1414,7 +1771,7 @@ begin
  elsif operation='claim' then
   update private.order_push_jobs set status='Skipped' where status='Sending' and last_attempt<now()-interval '5 minutes' and attempts>=3;
   update private.order_push_jobs set status='Queued' where status='Sending' and last_attempt<now()-interval '5 minutes' and attempts<3;
-  update private.order_push_jobs j set status='Skipped' where status in ('Queued','Failed') and (attempts>=3 or not exists(select 1 from private.user_push_devices v join public.order_notifications n on n.id=j.notice_id join public.orders o on o.id=n.order_id join public.profiles p on p.id=j.user_id where v.installation_id=j.installation_id and v.user_id=j.user_id and p.active and o.status='Ready' and o.paid and n.created_at>now()-interval '1 day'));
+  update private.order_push_jobs j set status='Skipped' where status in ('Queued','Failed') and (attempts>=3 or not exists(select 1 from private.user_push_devices v join public.order_notifications n on n.id=j.notice_id join public.orders o on o.id=n.order_id join public.profiles p on p.profile_id=j.user_id where v.installation_id=j.installation_id and v.user_id=j.user_id and p.active and o.status='Ready' and o.paid and n.created_at>now()-interval '1 day'));
   with chosen as(select id from private.order_push_jobs where status in ('Queued','Failed') and attempts<3 and next_attempt<=now() order by next_attempt for update skip locked limit 10), claimed as(update private.order_push_jobs j set status='Sending',attempts=attempts+1,last_attempt=now() from chosen where j.id=chosen.id returning j.*)
   select coalesce(jsonb_agg(jsonb_build_object('id',j.id,'notice_id',n.id,'order_id',n.order_id,'user_id',j.user_id,'token',v.token,'language',v.language)),'[]'::jsonb) into result from claimed j join private.user_push_devices v on v.installation_id=j.installation_id and v.user_id=j.user_id join public.order_notifications n on n.id=j.notice_id;
   return result;
@@ -1460,7 +1817,8 @@ create or replace function public.ctfly_staff_history(
 language plpgsql security definer set search_path = '' as $$
 declare result jsonb; day_start timestamptz; day_end timestamptz;
 begin
- if not exists(select 1 from public.profiles where id=auth.uid() and active and role in ('staff','admin')) then
+ if not exists(select 1 from public.profiles p where p.profile_id=public.ctfly_uid() and p.active and p.role in ('staff','admin')
+  and exists(select 1 from public.staff s where s.staff_id=p.profile_id)) then
   raise exception 'Staff access required.';
  end if;
  if p_module not in ('Activity','Transactions','Feedback','Checklist','Report') or p_module is null then
@@ -1478,9 +1836,9 @@ begin
 
  if p_module='Checklist' then
   return jsonb_build_object('items',coalesce((select jsonb_agg(jsonb_build_object('item',c.item,'history_key',c.item))
-   from public.checklist c where c.user_id=auth.uid() and c.day=coalesce(p_day,(now() at time zone 'Asia/Kuala_Lumpur')::date)),'[]'::jsonb),'has_more',false);
+   from public.checklist c where c.staff_id=public.ctfly_uid() and c.day=coalesce(p_day,(now() at time zone 'Asia/Kuala_Lumpur')::date)),'[]'::jsonb),'has_more',false);
  elsif p_module='Report' then
-  if not exists(select 1 from public.profiles where id=auth.uid() and role='admin') then raise exception 'Manager access required.';end if;
+  if not exists(select 1 from public.profiles where profile_id=public.ctfly_uid() and role='admin') then raise exception 'Manager access required.';end if;
   return jsonb_build_object('items',jsonb_build_array(jsonb_build_object('history_key','summary',
    'completed_sessions',(select count(*) from public.bookings b where b.status='Completed' and (p_day is null or b.starts_at>=day_start and b.starts_at<day_end)),
    'worked_minutes',(select coalesce(sum(a.minutes),0) from public.attendance a where p_day is null or a.clock_in>=day_start and a.clock_in<day_end),
@@ -1495,7 +1853,7 @@ begin
     'status',b.status,'paid',b.paid,'total',b.total,'starts_at',b.starts_at,'ends_at',b.ends_at,
     'created_at',b.created_at,'guests',b.guests,'minutes',extract(epoch from (b.ends_at-b.starts_at))::int/60,
     'detail',r.kind||' · '||r.zone) as payload
-  from public.bookings b join public.profiles p on p.id=b.user_id join public.resources r on r.id=b.resource_id
+  from public.bookings b join public.profiles p on p.profile_id=b.user_id join public.resources r on r.id=b.resource_id
   where p_module='Activity' and p_category in ('All','Bookings')
    and (p_day is null or b.starts_at>=day_start and b.starts_at<day_end)
   union all
@@ -1503,7 +1861,7 @@ begin
    jsonb_build_object('id',o.id,'category','Orders','customer_name',p.name,'title','Café order',
     'status',o.status,'paid',o.paid,'total',o.total,'created_at',o.created_at,'received_at',o.received_at,
     'detail',coalesce((select string_agg(i.qty||' × '||i.name,', ' order by i.id) from public.order_items i where i.order_id=o.id),''))
-  from public.orders o join public.profiles p on p.id=o.user_id
+  from public.orders o join public.profiles p on p.profile_id=o.user_id
   where p_module='Activity' and p_category in ('All','Orders')
    and (p_day is null or o.created_at>=day_start and o.created_at<day_end)
   union all
@@ -1511,14 +1869,14 @@ begin
    jsonb_build_object('id',r.id,'category','Competitions','customer_name',p.name,'title',e.name,
     'status',case when r.status='Withdrawn' then r.status when e.status in ('Completed','Cancelled') then e.status else r.status end,
     'paid',r.paid,'total',r.fee,'starts_at',e.starts_at,'ends_at',e.ends_at,'detail',r.team||' · '||e.game)
-  from public.registrations r join public.events e on e.id=r.event_id join public.profiles p on p.id=r.user_id
+  from public.registrations r join public.events e on e.id=r.event_id join public.profiles p on p.profile_id=r.user_id
   where p_module='Activity' and p_category in ('All','Competitions')
    and (p_day is null or e.starts_at>=day_start and e.starts_at<day_end)
   union all
   select r.created_at,'Reward:'||r.id,'Rewards',p.name,r.name,r.id::text,
    jsonb_build_object('id',r.id,'category','Rewards','customer_name',p.name,'title',r.name,
     'status',r.status,'points',r.points,'created_at',r.created_at,'detail','Points redemption')
-  from public.redemptions r join public.profiles p on p.id=r.user_id
+  from public.redemptions r join public.profiles p on p.profile_id=r.user_id
   where p_module='Activity' and p_category in ('All','Rewards')
    and (p_day is null or r.created_at>=day_start and r.created_at<day_end)
   union all
@@ -1526,7 +1884,7 @@ begin
    jsonb_build_object('id',t.id,'category','Transactions','customer_name',p.name,'title',t.kind,
     'status',t.status,'total',t.total,'created_at',t.created_at,'method',t.method,'reference',t.reference,
     'environment','test','payment',to_jsonb(t),'receipt',(select to_jsonb(b) from public.bills b where b.id=t.bill_id))
-  from public.test_payments t join public.profiles p on p.id=t.user_id
+  from public.test_payments t join public.profiles p on p.profile_id=t.user_id
   where p_module='Transactions' and (p_category='All' or t.status=p_category)
    and (p_day is null or t.created_at>=day_start and t.created_at<day_end)
   union all
@@ -1534,13 +1892,13 @@ begin
    jsonb_build_object('id',b.id,'category','Transactions','customer_name',p.name,'title',b.kind,
     'status',b.status,'total',b.total,'created_at',b.created_at,'method',b.method,
     'reference',coalesce(b.payment_reference,b.id::text),'environment','counter','receipt',to_jsonb(b))
-  from public.bills b join public.profiles p on p.id=b.user_id
+  from public.bills b join public.profiles p on p.profile_id=b.user_id
   where p_module='Transactions' and b.environment<>'test' and (p_category='All' or b.status=p_category)
    and (p_day is null or b.created_at>=day_start and b.created_at<day_end)
   union all
   select f.created_at,'Feedback:'||f.id,f.status,p.name,f.title,f.id::text,
    to_jsonb(f)||jsonb_build_object('category','Feedback','feedback_category',f.category,'customer_name',p.name)
-  from public.app_feedback f join public.profiles p on p.id=f.user_id
+  from public.app_feedback f join public.profiles p on p.profile_id=f.user_id
   where p_module='Feedback' and (p_category='All' or f.status=p_category)
    and (p_day is null or f.created_at>=day_start and f.created_at<day_end)
  ), page as (
@@ -1558,7 +1916,7 @@ begin
  return result;
 end $$;
 revoke all on function public.ctfly_staff_history(text,date,text,text,timestamptz,text) from public,anon,authenticated;
-grant execute on function public.ctfly_staff_history(text,date,text,text,timestamptz,text) to authenticated;
+grant execute on function public.ctfly_staff_history(text,date,text,text,timestamptz,text) to anon, authenticated;
 
 -- Section: transaction-filters
 -- A dedicated endpoint keeps older app versions compatible with staff history.
@@ -1578,8 +1936,9 @@ declare
     day_end timestamptz;
 begin
     if not exists (
-        select 1 from public.profiles
-        where id = auth.uid() and active and role in ('staff', 'admin')
+        select 1 from public.profiles p
+        where p.profile_id = public.ctfly_uid() and p.active and p.role in ('staff', 'admin')
+          and exists(select 1 from public.staff s where s.staff_id=p.profile_id)
     ) then
         raise exception 'Staff access required.';
     end if;
@@ -1629,7 +1988,7 @@ begin
     ), page as (
         select t.*, p.name as customer_name
         from payments t
-        join public.profiles p on p.id = t.user_id
+        join public.profiles p on p.profile_id = t.user_id
         where (
             btrim(p_search) = '' or
             strpos(lower(p.name || ' ' || t.kind || ' ' || t.reference), lower(btrim(p_search))) > 0
@@ -1662,7 +2021,7 @@ end $$;
 revoke all on function public.ctfly_staff_transactions(date,text,text,text,timestamptz,text)
     from public, anon, authenticated;
 grant execute on function public.ctfly_staff_transactions(date,text,text,text,timestamptz,text)
-    to authenticated;
+    to anon, authenticated;
 
 -- Section: staff-fingerprint-devices
 -- Existing device registrations and pending challenges are retained on reruns.
@@ -1671,14 +2030,14 @@ create schema if not exists ctfly_private;
 revoke all on schema ctfly_private from public, anon, authenticated;
 create table if not exists ctfly_private.staff_devices (
  id uuid primary key,
- user_id uuid not null references public.profiles(id) on delete cascade,
+ staff_id uuid not null references public.staff(staff_id) on delete cascade,
  staff_name text not null check (char_length(staff_name) between 2 and 60),
  device_name text not null check (char_length(device_name) between 1 and 100),
  public_key text not null check (char_length(public_key) between 80 and 300),
  created_at timestamptz not null default now(),
  last_used_at timestamptz
 );
-create index if not exists staff_devices_user_idx on ctfly_private.staff_devices(user_id);
+create index if not exists staff_devices_staff_idx on ctfly_private.staff_devices(staff_id);
 alter table ctfly_private.staff_devices enable row level security;
 create table if not exists ctfly_private.staff_device_challenges (
  id uuid primary key default gen_random_uuid(),
@@ -1695,7 +2054,8 @@ returns jsonb language plpgsql security definer set search_path = '' as $$
 declare device uuid; result jsonb;
 begin
  -- Serialize additions/removals and check the active role under the same account lock.
- perform 1 from public.profiles where id=p_owner and active and role in ('staff','admin') for update;
+ perform 1 from public.profiles p where p.profile_id=p_owner and p.active and p.role in ('staff','admin')
+  and exists(select 1 from public.staff s where s.staff_id=p.profile_id) for update;
  if not found then
   raise exception 'Staff access required.';
  end if;
@@ -1704,27 +2064,27 @@ begin
   if device is null or char_length(trim(coalesce(p_data->>'staff_name',''))) not between 2 and 60 then
    raise exception 'Enter a staff name between 2 and 60 characters.';
   end if;
-  if exists(select 1 from ctfly_private.staff_devices where id=device and user_id<>p_owner) then
+  if exists(select 1 from ctfly_private.staff_devices where id=device and staff_id<>p_owner) then
    raise exception 'This device is already registered to another account.';
   end if;
-  if not exists(select 1 from ctfly_private.staff_devices where id=device and user_id=p_owner)
-   and (select count(*) from ctfly_private.staff_devices where user_id=p_owner)>=5 then
+  if not exists(select 1 from ctfly_private.staff_devices where id=device and staff_id=p_owner)
+   and (select count(*) from ctfly_private.staff_devices where staff_id=p_owner)>=5 then
    raise exception 'Five devices are already registered. Remove a device before adding another.';
   end if;
-  insert into ctfly_private.staff_devices(id,user_id,staff_name,device_name,public_key)
+  insert into ctfly_private.staff_devices(id,staff_id,staff_name,device_name,public_key)
    values(device,p_owner,trim(p_data->>'staff_name'),p_data->>'device_name',p_data->>'public_key')
    on conflict(id) do update set staff_name=excluded.staff_name, device_name=excluded.device_name,
-    public_key=excluded.public_key where staff_devices.user_id=p_owner;
+    public_key=excluded.public_key where staff_devices.staff_id=p_owner;
   if not found then raise exception 'This device is already registered to another account.'; end if;
   delete from ctfly_private.staff_device_challenges where device_id=device;
  elsif p_operation='remove' then
-  delete from ctfly_private.staff_devices where id=(p_data->>'device_id')::uuid and user_id=p_owner;
+  delete from ctfly_private.staff_devices where id=(p_data->>'device_id')::uuid and staff_id=p_owner;
  elsif p_operation<>'list' or p_operation is null then
   raise exception 'Unsupported device operation.';
  end if;
  select coalesce(jsonb_agg(jsonb_build_object('id',id,'staff_name',staff_name,'device_name',device_name,
   'created_at',created_at,'last_used_at',last_used_at) order by created_at,id),'[]'::jsonb)
- into result from ctfly_private.staff_devices where user_id=p_owner;
+ into result from ctfly_private.staff_devices where staff_id=p_owner;
  return jsonb_build_object('devices',result,'limit',5);
 end $$;
 revoke all on function ctfly_private.manage_staff_devices(uuid,text,jsonb) from public,anon,authenticated,service_role;
@@ -1735,11 +2095,11 @@ begin
  if p_operation is null or p_operation not in ('list','remove') then
   raise exception 'Unsupported device operation.';
  end if;
- return ctfly_private.manage_staff_devices(auth.uid(),p_operation,p_data);
+ return ctfly_private.manage_staff_devices(public.ctfly_uid(),p_operation,p_data);
 end
 $$;
 revoke all on function public.ctfly_staff_devices(text,jsonb) from public,anon;
-grant execute on function public.ctfly_staff_devices(text,jsonb) to authenticated;
+grant execute on function public.ctfly_staff_devices(text,jsonb) to anon, authenticated;
 
 create or replace function public.ctfly_register_staff_device(p_owner uuid,p_data jsonb)
 returns jsonb language sql security definer set search_path = '' as $$
@@ -1757,7 +2117,8 @@ returns jsonb language plpgsql security definer set search_path = '' as $$
 declare d ctfly_private.staff_devices; c ctfly_private.staff_device_challenges; email text;
 begin
  select * into d from ctfly_private.staff_devices where id=p_device for update;
- if d.id is null or not exists(select 1 from public.profiles where id=d.user_id and active and role in ('staff','admin')) then
+ if d.id is null or not exists(select 1 from public.profiles p where p.profile_id=d.staff_id and p.active and p.role in ('staff','admin')
+  and exists(select 1 from public.staff s where s.staff_id=p.profile_id)) then
   raise exception 'Device registration is unavailable. Sign in with email and password to add this phone again.';
  end if;
  if p_operation='challenge' then
@@ -1771,11 +2132,11 @@ begin
  elsif p_operation='consume' then
   delete from ctfly_private.staff_device_challenges where id=p_challenge and device_id=p_device and expires_at>now() returning * into c;
   if c.id is null then raise exception 'Fingerprint request expired. Please try again.';end if;
-  select u.email into email from auth.users u where u.id=d.user_id;
-  return jsonb_build_object('owner',d.user_id,'email',email,'public_key',d.public_key,'nonce',c.nonce);
+  select s.email into email from public.staff s where s.staff_id=d.staff_id;
+  return jsonb_build_object('owner',d.staff_id,'email',email,'public_key',d.public_key,'nonce',c.nonce);
  elsif p_operation='check' then
   update ctfly_private.staff_devices set last_used_at=now() where id=p_device;
-  return jsonb_build_object('owner',d.user_id);
+  return jsonb_build_object('owner',d.staff_id);
  end if;
  raise exception 'Unsupported device operation.';
 end $$;

@@ -139,9 +139,9 @@ class FixtureGateway(private val fixture: JSONObject, override var signedIn: Boo
         phone: String,
     ) = false
 
-    override suspend fun recover(email: String) {}
+    override suspend fun recover(email: String) = ""
 
-    override suspend fun resend(email: String) {}
+    override suspend fun resend(email: String) = ""
 
     override suspend fun verify(email: String, code: String, type: String) {
         signedIn = true

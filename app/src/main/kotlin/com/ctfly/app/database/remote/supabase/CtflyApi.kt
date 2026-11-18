@@ -56,8 +56,7 @@ class CtflyApi(
                     connection.readTimeout = 20000
                     connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY)
                     connection.setRequestProperty("Content-Type", "application/json")
-                    if (token != null)
-                        connection.setRequestProperty("Authorization", "Bearer $token")
+                    if (token != null) connection.setRequestProperty("X-CTFLY-Session", token)
                     if (body != null) {
                         connection.doOutput = true
                         connection.outputStream.use { it.write(body.toString().toByteArray()) }
@@ -126,6 +125,10 @@ class CtflyApi(
             if (expectedGeneration != sessionGeneration)
                 throw kotlinx.coroutines.CancellationException("Account changed")
             val current = session ?: throw ApiFailure(401, "Please sign in.")
+            if (current.text("access_token").startsWith("eyJ")) {
+                localLogout()
+                throw ApiFailure(401, "Please sign in.")
+            }
             val generation = sessionGeneration
             if (
                 (rejectedToken != null && rejectedToken == current.text("access_token")) ||
@@ -134,8 +137,8 @@ class CtflyApi(
                 try {
                     saveSession(
                         request(
-                            "/auth/v1/token?grant_type=refresh_token",
-                            obj("refresh_token" to current.text("refresh_token")),
+                            "/rest/v1/rpc/ctfly_refresh_token",
+                            obj("p_refresh" to current.text("refresh_token")),
                         ),
                         generation,
                     )
@@ -217,8 +220,8 @@ class CtflyApi(
             val generation = sessionGeneration
             saveSession(
                 request(
-                    "/auth/v1/token?grant_type=password",
-                    obj("email" to email.trim(), "password" to password),
+                    "/rest/v1/rpc/ctfly_login",
+                    obj("p_email" to email.trim(), "p_password" to password),
                 ),
                 generation,
                 replacing = true,
@@ -262,32 +265,38 @@ class CtflyApi(
             val generation = sessionGeneration
             val result =
                 request(
-                    "/auth/v1/signup",
+                    "/rest/v1/rpc/ctfly_signup",
                     obj(
-                        "email" to email.trim(),
-                        "password" to password,
-                        "data" to obj("name" to name, "dob" to dob, "phone" to phone),
+                        "p_email" to email.trim(),
+                        "p_password" to password,
+                        "p_name" to name,
+                        "p_dob" to dob,
+                        "p_phone" to phone,
                     ),
                 )
             saveSession(result, generation, replacing = true)
             result.has("access_token")
         }
 
-    override suspend fun recover(email: String) {
-        request("/auth/v1/recover", obj("email" to email.trim()))
-    }
+    override suspend fun recover(email: String): String =
+        request("/rest/v1/rpc/ctfly_recover", obj("p_email" to email.trim())).text(
+            "message",
+            "If an account exists, a recovery code has been prepared.",
+        )
 
-    override suspend fun resend(email: String) {
-        request("/auth/v1/resend", obj("email" to email.trim(), "type" to "signup"))
-    }
+    override suspend fun resend(email: String): String =
+        request("/rest/v1/rpc/ctfly_resend", obj("p_email" to email.trim())).text(
+            "message",
+            "A new code was requested.",
+        )
 
     override suspend fun verify(email: String, code: String, type: String) =
         authMutex.withLock {
             val generation = sessionGeneration
             saveSession(
                 request(
-                    "/auth/v1/verify",
-                    obj("email" to email.trim(), "token" to code.trim(), "type" to type),
+                    "/rest/v1/rpc/ctfly_verify",
+                    obj("p_email" to email.trim(), "p_code" to code.trim(), "p_type" to type),
                 ),
                 generation,
                 replacing = true,
@@ -295,12 +304,12 @@ class CtflyApi(
         }
 
     override suspend fun newPassword(password: String) {
-        request("/auth/v1/user", obj("password" to password), accessToken(), "PUT")
+        request("/rest/v1/rpc/ctfly_new_password", obj("p_password" to password), accessToken())
     }
 
     override suspend fun logout() {
         try {
-            if (signedIn) request("/auth/v1/logout?scope=local", null, accessToken())
+            if (signedIn) request("/rest/v1/rpc/ctfly_logout", JSONObject(), accessToken())
         } catch (_: Exception) {
             // Explicit logout clears this device even when the network is unavailable.
         } finally {

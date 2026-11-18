@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.staffId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.CafeZone
 import com.ctfly.app.domain.StaffDateFilter
@@ -58,7 +59,7 @@ fun CrewScreen(vm: AppViewModel) {
         }
         items(
             vm.rows("shifts")
-                .filter { it.text("user_id") == vm.userId && it.text("status") == "Scheduled" }
+                .filter { it.staffId() == vm.userId && it.text("status") == "Scheduled" }
                 .onStaffDay(vm, "shiftHistoryDay", "starts_at")
                 .sortedBy { it.text("starts_at") }
         ) { s ->
@@ -83,7 +84,7 @@ fun CrewScreen(vm: AppViewModel) {
                 }
             }
         }
-        if (vm.rows("shifts").none { it.text("user_id") == vm.userId })
+        if (vm.rows("shifts").none { it.staffId() == vm.userId })
             item { EmptyState("No shifts assigned", "Your manager will add your schedule here.") }
         item { SectionTitle("Daily readiness", selectedDay) }
         if (historicalChecklist && checklist != null)
@@ -121,7 +122,7 @@ fun CrewScreen(vm: AppViewModel) {
         }
         item {
             SectionTitle("Missions", action = "Add mission") {
-                vm.openForm("task", obj("day" to today, "user_id" to vm.userId))
+                vm.openForm("task", obj("day" to today, "staff_id" to vm.userId))
             }
         }
         items(vm.rows("tasks").onStaffDay(vm, "shiftHistoryDay", "day")) { t ->
@@ -135,7 +136,7 @@ fun CrewScreen(vm: AppViewModel) {
                     Column {
                         AppText(t.text("title"), fontWeight = FontWeight.Bold)
                         AppText(
-                            "${t.text("day")} · ${vm.person(t.text("user_id"))}",
+                            "${t.text("day")} · ${vm.person(t.staffId())}",
                             color = Muted,
                             fontSize = 12.sp,
                         )
@@ -146,7 +147,7 @@ fun CrewScreen(vm: AppViewModel) {
         item { SectionTitle("Leave requests") }
         items(
             vm.rows("leave_requests")
-                .filter { it.text("user_id") == vm.userId }
+                .filter { it.staffId() == vm.userId }
                 .onStaffDay(vm, "shiftHistoryDay", "day")
         ) { l ->
             SurfaceCard {

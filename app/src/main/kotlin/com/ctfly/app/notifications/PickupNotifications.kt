@@ -16,6 +16,7 @@ import com.ctfly.app.MainActivity
 import com.ctfly.app.R
 import com.ctfly.app.database.local.AppPreferences
 import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.profileId
 import com.ctfly.app.database.remote.rows
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.ui.common.AppStrings
@@ -81,7 +82,7 @@ object PickupNotifications {
         if (BuildConfig.STAFF_APP) return
         val user = snapshot.optJSONObject("profile") ?: return
         if (user.text("role") != "customer") return
-        val owner = user.text("id")
+        val owner = user.profileId()
         snapshot.rows("orders").forEach { order ->
             if (order.text("status") == "Ready" && order.optBoolean("paid")) {
                 publish(context, owner, order.text("id"))
@@ -184,9 +185,9 @@ class PickupMessagingService : FirebaseMessagingService() {
         if (
             !api.signedIn ||
                 profile?.text("role") != "customer" ||
-                profile.text("id") != data["user_id"]
+                profile.profileId() != data["user_id"]
         )
             return
-        PickupNotifications.publish(this, profile.text("id"), data["order_id"].orEmpty())
+        PickupNotifications.publish(this, profile.profileId(), data["order_id"].orEmpty())
     }
 }

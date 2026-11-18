@@ -19,14 +19,14 @@ let registered=false, active=true, generations=0, sessions=0;
 const challenges=new Map<string,string>();
 globalThis.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
  const url=String(input), h=new Headers(init?.headers), b=init?.body?JSON.parse(String(init.body)):{};
- if(url.endsWith('/auth/v1/user'))return Response.json({id:owner},{status:h.get('Authorization')==='Bearer eyJ.staff'?200:401});
+ if(url.endsWith('/ctfly_session_profile'))return Response.json(h.get('X-CTFLY-Session')==='staff-session'?{id:owner,email:'staff@example.test'}:{message:'Sign in required'},{status:h.get('X-CTFLY-Session')==='staff-session'?200:401});
  if(url.endsWith('/ctfly_register_staff_device')){
   if(h.get('apikey')!=='sb_secret_fixture'||h.has('Authorization')||b.p_owner!==owner||b.p_data.device_id!==device||b.p_data.public_key!==publicKey)throw Error('Registration must use the verified owner and service key');
   registered=true;
   return Response.json({devices:[{id:device,staff_name:b.p_data.staff_name,device_name:'Test phone'}],limit:5});
  }
  if(url.endsWith('/ctfly_staff_devices')){
-  if(b.p_operation==='register'||h.get('Authorization')!=='Bearer eyJ.staff')throw Error('Device management must use the user JWT');
+  if(b.p_operation==='register'||h.get('X-CTFLY-Session')!=='staff-session')throw Error('Device management must use the session');
   if(b.p_operation==='remove')registered=false;
   return Response.json({devices:registered?[{id:device,staff_name:b.p_data.staff_name??'Test staff',device_name:'Test phone'}]:[],limit:5});
  }
@@ -39,16 +39,16 @@ globalThis.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
   }
   return Response.json({owner});
  }
- if(url.endsWith('/admin/generate_link')){generations++;if(h.get('apikey')!=='sb_secret_fixture')throw Error('Admin credentials missing');return Response.json({id:owner,hashed_token:'internal-only'});}
- if(url.endsWith('/auth/v1/verify')){sessions++;return Response.json({user:{id:owner},access_token:'new-session',refresh_token:'new-refresh'});}
+ if(url.endsWith('/ctfly_open_session')){generations++;sessions++;if(h.get('apikey')!=='sb_secret_fixture'||b.p_profile!==owner)throw Error('Session must be issued for the verified owner');return Response.json({user:{id:owner},access_token:'new-session',refresh_token:'new-refresh'});}
+ if(url.endsWith('/ctfly_logout'))return Response.json({message:'Signed out'});
  throw Error('Unexpected request');
 };
-const call=(body:unknown,token='')=>handler(new Request('https://fixture.test/function',{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(body)}));
+const call=(body:unknown,token='')=>handler(new Request('https://fixture.test/function',{method:'POST',headers:{'Content-Type':'application/json',...(token?{'X-CTFLY-Session':token}:{})},body:JSON.stringify(body)}));
 function check(value:unknown,label:string){if(!value)throw Error(label);}
 const registration={operation:'register',device_id:device,staff_name:'Jamie',device_name:'Phone',public_key:publicKey,signature:await sign(`ctfly-enroll:${owner}:${device}`)};
 check((await call(registration)).status===401,'Registration needs password-authenticated account');
-check((await call({...registration,signature:await sign('wrong')} ,'eyJ.staff')).status===403,'Registration needs the device private key');
-check((await call({...registration,owner:crypto.randomUUID()},'eyJ.staff')).status===200,'Registration uses the authenticated owner');
+check((await call({...registration,signature:await sign('wrong')} ,'staff-session')).status===403,'Registration needs the device private key');
+check((await call({...registration,owner:crypto.randomUUID()},'staff-session')).status===200,'Registration uses the authenticated owner');
 check((await call({operation:'list'})).status===401,'Device names are private');
 async function login(signatureMessage?:string){
  const c=await (await call({operation:'challenge',device_id:device})).json();

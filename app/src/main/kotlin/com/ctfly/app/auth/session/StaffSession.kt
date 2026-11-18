@@ -148,4 +148,8 @@ class StaffSessionGateway(private val delegate: ClubGateway, private val session
         requireUnlocked()
         return delegate.uploadPoster(bytes).also { requireUnlocked() }
     }
+
+    override suspend fun recover(email: String): String = delegate.recover(email)
+
+    override suspend fun resend(email: String): String = delegate.resend(email)
 }

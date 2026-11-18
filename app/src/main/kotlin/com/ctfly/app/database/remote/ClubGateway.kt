@@ -9,7 +9,7 @@ interface ClubGateway {
         get() = JSONObject()
 
     val accountId: String
-        get() = cachedSnapshot.optJSONObject("profile")?.text("id").orEmpty()
+        get() = cachedSnapshot.optJSONObject("profile")?.profileId().orEmpty()
 
     val accountEmail: String
         get() = cachedSnapshot.optJSONObject("profile")?.text("email").orEmpty()
@@ -43,9 +43,9 @@ interface ClubGateway {
         phone: String,
     ): Boolean
 
-    suspend fun recover(email: String)
+    suspend fun recover(email: String): String
 
-    suspend fun resend(email: String)
+    suspend fun resend(email: String): String
 
     suspend fun verify(email: String, code: String, type: String)
 

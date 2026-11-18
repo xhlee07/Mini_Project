@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.ctfly.app.database.remote.profileId
 import com.ctfly.app.database.remote.rows
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.CafeZone
@@ -79,7 +80,7 @@ fun EditorDialog(vm: AppViewModel) {
     val staff =
         vm.rows("people")
             .filter { it.text("role") in listOf("staff", "admin") }
-            .map { it.text("id") to it.text("name") }
+            .map { it.profileId() to it.text("name") }
     val fields =
         when (type) {
             "save_resource" ->
@@ -266,7 +267,7 @@ fun EditorDialog(vm: AppViewModel) {
                             listOf("" to "Any customer") +
                                 vm.rows("people")
                                     .filter { it.text("role") == "customer" }
-                                    .map { it.text("id") to it.text("name") },
+                                    .map { it.profileId() to it.text("name") },
                             optional = true,
                         ),
                         FormField(
@@ -295,7 +296,7 @@ fun EditorDialog(vm: AppViewModel) {
                 listOf(FormField("name", "Member name"), FormField("phone", "Phone number"))
             "weekly_roster" ->
                 listOf(
-                    FormField("user_id", "Staff member", "select", staff),
+                    FormField("staff_id", "Staff member", "select", staff),
                     FormField("day", "Week begins", "date"),
                     FormField(
                         "pattern",
@@ -309,12 +310,12 @@ fun EditorDialog(vm: AppViewModel) {
                 )
             "schedule" ->
                 listOf(
-                    FormField("user_id", "Staff member", "select", staff),
+                    FormField("staff_id", "Staff member", "select", staff),
                     FormField("starts_at", "Shift start", "datetime"),
                     FormField("ends_at", "Shift end", "datetime"),
                 )
             "task" ->
-                (if (vm.admin) listOf(FormField("user_id", "Assigned to", "select", staff))
+                (if (vm.admin) listOf(FormField("staff_id", "Assigned to", "select", staff))
                 else emptyList()) +
                     listOf(FormField("title", "Mission"), FormField("day", "Due date", "date"))
             "leave" ->

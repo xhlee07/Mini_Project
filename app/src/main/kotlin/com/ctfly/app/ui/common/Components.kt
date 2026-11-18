@@ -266,34 +266,45 @@ fun Select(
 @Composable
 fun DateFields(label: String, value: String, onChange: (String) -> Unit, birth: Boolean = false) {
     val today = LocalDate.now(CafeZone)
-    val parsed =
-        runCatching { LocalDate.parse(value) }
-            .getOrDefault(if (birth) today.minusYears(18) else today)
-    fun change(y: Int = parsed.year, m: Int = parsed.monthValue, d: Int = parsed.dayOfMonth) {
-        onChange(
-            LocalDate.of(y, m, d.coerceAtMost(java.time.YearMonth.of(y, m).lengthOfMonth()))
-                .toString()
-        )
+    val youngest = if (birth) today.minusYears(18) else null
+    val oldest = if (birth) today.minusYears(120) else null
+    val fallback = youngest ?: today
+    val parsed = runCatching { LocalDate.parse(value) }.getOrDefault(fallback)
+    fun clamp(date: LocalDate): LocalDate {
+        var result = date
+        if (oldest != null && result.isBefore(oldest)) result = oldest
+        if (youngest != null && result.isAfter(youngest)) result = youngest
+        return result
+    }
+    val shown = clamp(parsed)
+    // Dropdowns already show this date. Persist it so signup does not reject a blank field.
+    LaunchedEffect(value, birth) {
+        val stored = if (value.isBlank()) fallback else shown
+        if (stored.toString() != value) onChange(stored.toString())
+    }
+    fun change(y: Int = shown.year, m: Int = shown.monthValue, d: Int = shown.dayOfMonth) {
+        val day = d.coerceAtMost(java.time.YearMonth.of(y, m).lengthOfMonth())
+        onChange(clamp(LocalDate.of(y, m, day)).toString())
     }
     AppText(label, color = Muted, fontSize = 12.sp)
     val years =
-        if (birth) (today.year - 120..today.year).reversed()
+        if (oldest != null && youngest != null) (oldest.year..youngest.year).reversed()
         else (today.year..today.year + 1).toList()
     val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val twoRows = maxWidth < 300.dp || fontScale > 1.4f
+        val twoRows = this.maxWidth < 300.dp || fontScale > 1.4f
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Select(
                     "Day",
-                    parsed.dayOfMonth.toString(),
-                    (1..parsed.lengthOfMonth()).map { it.toString() to it.toString() },
+                    shown.dayOfMonth.toString(),
+                    (1..shown.lengthOfMonth()).map { it.toString() to it.toString() },
                     { change(d = it.toInt()) },
                     Modifier.weight(1f),
                 )
                 Select(
                     "Month",
-                    parsed.monthValue.toString(),
+                    shown.monthValue.toString(),
                     (1..12).map { it.toString() to java.time.Month.of(it).name.take(3) },
                     { change(m = it.toInt()) },
                     Modifier.weight(1f),
@@ -301,7 +312,7 @@ fun DateFields(label: String, value: String, onChange: (String) -> Unit, birth: 
                 if (!twoRows)
                     Select(
                         "Year",
-                        parsed.year.toString(),
+                        shown.year.toString(),
                         years.map { it.toString() to it.toString() },
                         { change(y = it.toInt()) },
                         Modifier.weight(1f),
@@ -310,16 +321,16 @@ fun DateFields(label: String, value: String, onChange: (String) -> Unit, birth: 
             if (twoRows)
                 Select(
                     "Year",
-                    parsed.year.toString(),
+                    shown.year.toString(),
                     years.map { it.toString() to it.toString() },
                     { change(y = it.toInt()) },
                     Modifier.fillMaxWidth(),
                 )
         }
     }
-    if (value.isBlank())
-        TextButton(onClick = { onChange(parsed.toString()) }) { AppText("Use ${parsed}") }
 }
+
+
 
 @Composable
 fun ActivityArt(kind: String, modifier: Modifier = Modifier) {

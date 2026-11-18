@@ -11,7 +11,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.assignedStaffId
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.staffId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.StaffDateFilter
 import com.ctfly.app.domain.historyDateLabel
@@ -54,9 +56,9 @@ fun EquipmentScreen(vm: AppViewModel) {
                 AppText(t.text("asset"), fontSize = 12.sp, color = Muted)
                 AppText(t.text("title"), fontWeight = FontWeight.Bold, fontSize = 19.sp)
                 AppText(historyDateLabel(t.text("created_at")), color = Muted, fontSize = 12.sp)
-                if (t.text("assigned_user").isNotEmpty())
+                if (t.assignedStaffId().isNotEmpty())
                     AppText(
-                        "Assigned: ${vm.person(t.text("assigned_user"))}",
+                        "Assigned: ${vm.person(t.assignedStaffId())}",
                         color = Muted,
                         fontSize = 12.sp,
                     )
@@ -70,7 +72,7 @@ fun EquipmentScreen(vm: AppViewModel) {
                             AppText("I’ll take this")
                         }
                     "In progress" ->
-                        if (t.text("assigned_user") == vm.userId || vm.admin)
+                        if (t.assignedStaffId() == vm.userId || vm.admin)
                             TextButton(
                                 onClick = { vm.openForm("resolve", obj("id" to t.text("id"))) }
                             ) {
@@ -78,8 +80,8 @@ fun EquipmentScreen(vm: AppViewModel) {
                             }
                     "Resolved" ->
                         if (
-                            t.text("user_id") == vm.userId ||
-                                t.text("assigned_user") == vm.userId ||
+                            t.staffId() == vm.userId ||
+                                t.assignedStaffId() == vm.userId ||
                                 vm.admin
                         )
                             TextButton(
