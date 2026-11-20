@@ -18,26 +18,26 @@ begin
   if device is null or char_length(trim(coalesce(p_data->>'staff_name',''))) not between 2 and 60 then
    raise exception 'Enter a staff name between 2 and 60 characters.';
   end if;
-  if exists(select 1 from ctfly_private.staff_devices where id=device and staff_id<>p_owner) then
+  if exists(select 1 from ctfly_private.staff_devices where staff_device_id=device and staff_id<>p_owner) then
    raise exception 'This device is already registered to another account.';
   end if;
-  if not exists(select 1 from ctfly_private.staff_devices where id=device and staff_id=p_owner)
+  if not exists(select 1 from ctfly_private.staff_devices where staff_device_id=device and staff_id=p_owner)
    and (select count(*) from ctfly_private.staff_devices where staff_id=p_owner)>=5 then
    raise exception 'Five devices are already registered. Remove a device before adding another.';
   end if;
-  insert into ctfly_private.staff_devices(id,staff_id,staff_name,device_name,public_key)
+  insert into ctfly_private.staff_devices(staff_device_id,staff_id,staff_name,device_name,public_key)
    values(device,p_owner,trim(p_data->>'staff_name'),p_data->>'device_name',p_data->>'public_key')
-   on conflict(id) do update set staff_name=excluded.staff_name, device_name=excluded.device_name,
+   on conflict(staff_device_id) do update set staff_name=excluded.staff_name, device_name=excluded.device_name,
     public_key=excluded.public_key where staff_devices.staff_id=p_owner;
   if not found then raise exception 'This device is already registered to another account.'; end if;
   delete from ctfly_private.staff_device_challenges where device_id=device;
  elsif p_operation='remove' then
-  delete from ctfly_private.staff_devices where id=(p_data->>'device_id')::uuid and staff_id=p_owner;
+  delete from ctfly_private.staff_devices where staff_device_id=(p_data->>'device_id')::uuid and staff_id=p_owner;
  elsif p_operation<>'list' or p_operation is null then
   raise exception 'Unsupported device operation.';
  end if;
- select coalesce(jsonb_agg(jsonb_build_object('id',id,'staff_name',staff_name,'device_name',device_name,
-  'created_at',created_at,'last_used_at',last_used_at) order by created_at,id),'[]'::jsonb)
+ select coalesce(jsonb_agg(jsonb_build_object('id',staff_device_id,'staff_name',staff_name,'device_name',device_name,
+  'created_at',created_at,'last_used_at',last_used_at) order by created_at,staff_device_id),'[]'::jsonb)
  into result from ctfly_private.staff_devices where staff_id=p_owner;
  return jsonb_build_object('devices',result,'limit',5);
 end $$;

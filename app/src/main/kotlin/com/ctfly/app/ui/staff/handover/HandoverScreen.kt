@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.sp
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.rows
 import com.ctfly.app.database.remote.staffId
+import com.ctfly.app.database.remote.handoverId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.StaffDateFilter
 import com.ctfly.app.domain.historyDateLabel
@@ -56,9 +57,9 @@ fun HandoverScreen(vm: AppViewModel) {
                 )
                 if (h.staffId() != vm.userId) {
                     val read =
-                        vm.rows("handover_reads").any { it.text("handover_id") == h.text("id") }
+                        vm.rows("handover_reads").any { it.text("handover_id") == h.handoverId() }
                     TextButton(
-                        onClick = { vm.action("ack", obj("id" to h.text("id"))) },
+                        onClick = { vm.action("ack", obj("id" to h.handoverId())) },
                         enabled = !read && !vm.busy,
                     ) {
                         AppText(if (read) "✓ Acknowledged" else "Acknowledge")

@@ -15,6 +15,13 @@ import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.profileId
 import com.ctfly.app.database.remote.rows
 import com.ctfly.app.database.remote.staffId
+import com.ctfly.app.database.remote.billId
+import com.ctfly.app.database.remote.categoryId
+import com.ctfly.app.database.remote.eventId
+import com.ctfly.app.database.remote.leaveRequestId
+import com.ctfly.app.database.remote.orderId
+import com.ctfly.app.database.remote.productId
+import com.ctfly.app.database.remote.shiftId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.CafeZone
 import com.ctfly.app.domain.StaffDateFilter
@@ -105,7 +112,7 @@ fun ManagementScreen(vm: AppViewModel) {
                                     "save_product",
                                     obj(
                                         "category_id" to
-                                            (vm.rows("categories").firstOrNull()?.text("id")
+                                            (vm.rows("categories").firstOrNull()?.categoryId()
                                                 ?: "1"),
                                         "threshold" to "5",
                                         "active" to "true",
@@ -138,7 +145,7 @@ fun ManagementScreen(vm: AppViewModel) {
                                     vm.openForm(
                                         "restock",
                                         obj(
-                                            "id" to p.text("id"),
+                                            "id" to p.productId(),
                                             "quantity" to "10",
                                             "reason" to "Delivery",
                                         ),
@@ -157,7 +164,7 @@ fun ManagementScreen(vm: AppViewModel) {
                 items(vm.rows("stock_records").onStaffDay(vm, "stockHistoryDay", "created_at")) { s
                     ->
                     AppText(
-                        "${historyDateLabel(s.text("created_at"))} · ${s.optInt("quantity")} · ${vm.rows("products").find{it.text("id")==s.text("product_id")}?.text("name")} · ${s.text("reason").replace("Released test checkout hold", "Released checkout hold")}",
+                        "${historyDateLabel(s.text("created_at"))} · ${s.optInt("quantity")} · ${vm.rows("products").find{it.productId()==s.text("product_id")}?.text("name")} · ${s.text("reason").replace("Released test checkout hold", "Released checkout hold")}",
                         color = Muted,
                         fontSize = 12.sp,
                     )
@@ -198,7 +205,7 @@ fun ManagementScreen(vm: AppViewModel) {
                             if (e.text("status") == "Open")
                                 TextButton(
                                     onClick = {
-                                        vm.action("bracket", obj("event_id" to e.text("id")))
+                                        vm.action("bracket", obj("event_id" to e.eventId()))
                                     },
                                     enabled = !vm.busy,
                                 ) {
@@ -206,7 +213,7 @@ fun ManagementScreen(vm: AppViewModel) {
                                 }
                         }
                         vm.rows("matches")
-                            .filter { it.text("event_id") == e.text("id") }
+                            .filter { it.text("event_id") == e.eventId() }
                             .forEach { m ->
                                 AppText(
                                     "R${m.optInt("round")} · ${m.text("team_a","TBD")} vs ${m.text("team_b","Bye / TBD")}",
@@ -218,19 +225,20 @@ fun ManagementScreen(vm: AppViewModel) {
                                         color = Lime,
                                         fontSize = 12.sp,
                                     )
-                                else if (m.text("a").isNotEmpty() && m.text("b").isNotEmpty())
+                                else if (m.text("team_a_id", m.text("a")).isNotEmpty() && m.text("team_b_id", m.text("b")).isNotEmpty())
                                     Row {
-                                        listOf("a", "b").forEach { side ->
+                                        listOf("team_a" to "team_a_id", "team_b" to "team_b_id").forEach { (nameKey, idKey) ->
+                                            val participantId = m.text(idKey, m.text(if (nameKey == "team_a") "a" else "b"))
                                             TextButton(
                                                 onClick = {
                                                     vm.set("winMatch", m.text("id"))
-                                                    vm.set("winTeam", m.text(side))
-                                                    vm.set("winName", m.text("team_$side"))
+                                                    vm.set("winTeam", participantId)
+                                                    vm.set("winName", m.text(nameKey))
                                                     vm.set("dialog", "winner")
                                                 }
                                             ) {
                                                 AppText(
-                                                    "${m.text("team_$side")} wins",
+                                                    "${m.text(nameKey)} wins",
                                                     fontSize = 11.sp,
                                                 )
                                             }
@@ -293,7 +301,7 @@ fun ManagementScreen(vm: AppViewModel) {
                         if (s.text("status") == "Scheduled")
                             TextButton(
                                 onClick = {
-                                    vm.action("cancel_shift", obj("shift_id" to s.text("id")))
+                                    vm.action("cancel_shift", obj("shift_id" to s.shiftId()))
                                 },
                                 enabled = !vm.busy,
                             ) {
@@ -318,7 +326,7 @@ fun ManagementScreen(vm: AppViewModel) {
                                         onClick = {
                                             vm.action(
                                                 "leave_decision",
-                                                obj("leave_id" to l.text("id"), "status" to status),
+                                                obj("leave_id" to l.leaveRequestId(), "status" to status),
                                             )
                                         },
                                         enabled = !vm.busy,
@@ -481,7 +489,7 @@ fun ManagementScreen(vm: AppViewModel) {
                         )
                             TextButton(
                                 onClick = {
-                                    vm.openForm("void_bill", obj("bill_id" to b.text("id")))
+                                    vm.openForm("void_bill", obj("bill_id" to b.billId()))
                                 }
                             ) {
                                 AppText("Void unfulfilled payment")
@@ -493,7 +501,7 @@ fun ManagementScreen(vm: AppViewModel) {
                     vm.rows("order_items")
                         .filter { i ->
                             vm.rows("orders").any {
-                                it.text("id") == i.text("order_id") &&
+                                it.orderId() == i.text("order_id") &&
                                     onStaffDay(
                                         it.text("created_at"),
                                         vm.field("reportHistoryDay"),
@@ -501,7 +509,7 @@ fun ManagementScreen(vm: AppViewModel) {
                                     it.optBoolean("paid") &&
                                     it.text("status") != "Cancelled" &&
                                     vm.rows("bills").none { bill ->
-                                        bill.text("source_id") == it.text("id") &&
+                                        bill.text("source_id") == it.orderId() &&
                                             bill.text("environment") == "test"
                                     }
                             }

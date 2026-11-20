@@ -31,6 +31,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.repeatOnLifecycle
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.eventId
+import com.ctfly.app.database.remote.registrationId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.money
 import com.ctfly.app.state.AppViewModel
@@ -70,7 +72,7 @@ fun EventsScreen(vm: AppViewModel) {
         item { SectionTitle("Upcoming & live", "One team. One shot.") }
         items(
             vm.rows("events").filter { it.text("status") !in listOf("Cancelled", "Draft") },
-            key = { it.text("id") },
+            key = { it.eventId() },
         ) { e ->
             SurfaceCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -86,12 +88,12 @@ fun EventsScreen(vm: AppViewModel) {
                 )
                 val mine =
                     vm.rows("registrations").find {
-                        it.text("event_id") == e.text("id") && it.text("status") == "Registered"
+                        it.text("event_id") == e.eventId() && it.text("status") == "Registered"
                     }
                 if (mine == null && e.text("status") == "Open")
                     Button(
                         onClick = {
-                            vm.set("selectedEvent", e.text("id"))
+                            vm.set("selectedEvent", e.eventId())
                             vm.set("dialog", "event")
                         }
                     ) {
@@ -101,23 +103,23 @@ fun EventsScreen(vm: AppViewModel) {
                     AppText("Your team: ${mine.text("team")}", color = Lime)
                     if (
                         vm.rows("test_payments").any {
-                            it.text("source_id") == mine.text("id") &&
+                            it.text("source_id") == mine.registrationId() &&
                                 it.text("status") == "Succeeded"
                         }
                     )
                         Chip("Online payment", Aqua)
                     if (!mine.optBoolean("paid")) {
                         AppText("Entry fee payable at counter", color = Orange)
-                        PayButton(vm, "Event", mine.text("id"))
+                        PayButton(vm, "Event", mine.registrationId())
                         TextButton(
-                            onClick = { vm.action("withdraw_event", obj("id" to mine.text("id"))) },
+                            onClick = { vm.action("withdraw_event", obj("id" to mine.registrationId())) },
                             enabled = !vm.busy,
                         ) {
                             AppText("Withdraw entry")
                         }
                     }
                 }
-                val matches = vm.rows("matches").filter { it.text("event_id") == e.text("id") }
+                val matches = vm.rows("matches").filter { it.text("event_id") == e.eventId() }
                 if (matches.isNotEmpty()) {
                     HorizontalDivider()
                     AppText("Tournament bracket", fontWeight = FontWeight.Bold)

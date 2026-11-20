@@ -14,6 +14,7 @@ import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.assignedStaffId
 import com.ctfly.app.database.remote.rows
 import com.ctfly.app.database.remote.staffId
+import com.ctfly.app.database.remote.ticketId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.StaffDateFilter
 import com.ctfly.app.domain.historyDateLabel
@@ -66,7 +67,7 @@ fun EquipmentScreen(vm: AppViewModel) {
                 when (t.text("status")) {
                     "Open" ->
                         TextButton(
-                            onClick = { vm.action("claim", obj("id" to t.text("id"))) },
+                            onClick = { vm.action("claim", obj("id" to t.ticketId())) },
                             enabled = !vm.busy,
                         ) {
                             AppText("I’ll take this")
@@ -74,7 +75,7 @@ fun EquipmentScreen(vm: AppViewModel) {
                     "In progress" ->
                         if (t.assignedStaffId() == vm.userId || vm.admin)
                             TextButton(
-                                onClick = { vm.openForm("resolve", obj("id" to t.text("id"))) }
+                                onClick = { vm.openForm("resolve", obj("id" to t.ticketId())) }
                             ) {
                                 AppText("Resolve with note")
                             }
@@ -85,7 +86,7 @@ fun EquipmentScreen(vm: AppViewModel) {
                                 vm.admin
                         )
                             TextButton(
-                                onClick = { vm.action("reopen", obj("id" to t.text("id"))) },
+                                onClick = { vm.action("reopen", obj("id" to t.ticketId())) },
                                 enabled = !vm.busy,
                             ) {
                                 AppText("Reopen issue")

@@ -20,6 +20,7 @@ import androidx.core.content.FileProvider
 import com.ctfly.app.R
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.billId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.CafeZone
 import com.ctfly.app.domain.money
@@ -65,7 +66,7 @@ fun receiptLines(b: JSONObject): List<String> = buildList {
             .getOrDefault("")
     add("------------------------------------")
     add("RECEIPT DETAILS")
-    add("Receipt no.: CT-$stamp-${b.text("id").uppercase(java.util.Locale.ROOT)}")
+    add("Receipt no.: CT-$stamp-${b.billId().uppercase(java.util.Locale.ROOT)}")
     add("Issued: ${receiptDate(b.text("created_at"))}")
     add("Status: ${b.text("status")}")
     val d = b.optJSONObject("details") ?: JSONObject()
@@ -110,7 +111,7 @@ fun receiptLines(b: JSONObject): List<String> = buildList {
 fun createReceiptPdf(context: Context, bill: JSONObject): File {
     val folder = File(context.cacheDir, "receipts").apply { mkdirs() }
     val id =
-        bill.text("id").filter { it.isLetterOrDigit() || it == '-' }.take(64).ifBlank { "receipt" }
+        bill.billId().filter { it.isLetterOrDigit() || it == '-' }.take(64).ifBlank { "receipt" }
     val file = File(folder, "CTFLY-$id.pdf")
     val document = PdfDocument()
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -389,7 +390,7 @@ fun openReceiptPdf(context: Context, b: JSONObject) {
 fun ReceiptContent(vm: AppViewModel) {
     val context = LocalContext.current
     val initial = runCatching { JSONObject(vm.field("receipt")) }.getOrDefault(JSONObject())
-    val b = vm.rows("bills").find { it.text("id") == initial.text("id") } ?: initial
+    val b = vm.rows("bills").find { it.billId() == initial.billId() } ?: initial
     val d = b.optJSONObject("details") ?: JSONObject()
     val test = b.text("environment") == "test"
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -465,7 +466,7 @@ fun ReceiptContent(vm: AppViewModel) {
         )
         if (test) AppText("No money was charged.", color = Muted, fontSize = 12.sp)
     }
-    val job = vm.rows("receipt_emails").find { it.text("bill_id") == b.text("id") }
+    val job = vm.rows("receipt_emails").find { it.text("bill_id") == b.billId() }
     val mailStatus = job?.text("status").orEmpty()
     AppText(
         when (mailStatus) {
@@ -499,7 +500,7 @@ fun ReceiptContent(vm: AppViewModel) {
     }
     if (mailStatus in listOf("", "Failed", "NotConfigured"))
         TextButton(
-            onClick = { vm.action("receipt_email", obj("id" to b.text("id"))) },
+            onClick = { vm.action("receipt_email", obj("id" to b.billId())) },
             enabled = !vm.busy,
         ) {
             AppText("Send to registered email")

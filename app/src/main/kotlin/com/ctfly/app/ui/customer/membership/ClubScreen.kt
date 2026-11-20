@@ -31,6 +31,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.repeatOnLifecycle
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.redeemId
+import com.ctfly.app.database.remote.rewardId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.money
 import com.ctfly.app.domain.tier
@@ -128,7 +130,7 @@ fun ClubScreen(vm: AppViewModel) {
         item { SectionTitle("Good things, earned.", "Exchange points for club favourites") }
         items(
             vm.rows("rewards").filter { it.optBoolean("active", true) },
-            key = { it.text("id") },
+            key = { it.rewardId() },
         ) { r ->
             SurfaceCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -149,7 +151,7 @@ fun ClubScreen(vm: AppViewModel) {
                     }
                 }
                 OutlinedButton(
-                    onClick = { vm.action("redeem", obj("id" to r.text("id"))) },
+                    onClick = { vm.action("redeem", obj("id" to r.rewardId())) },
                     enabled =
                         !vm.busy &&
                             vm.profile.optInt("points") >= r.optInt("points") &&
@@ -165,7 +167,7 @@ fun ClubScreen(vm: AppViewModel) {
             SurfaceCard {
                 AppText(r.text("name"), fontWeight = FontWeight.Bold)
                 Chip(r.text("status"))
-                AppText("Voucher ${r.text("id").take(8)}", color = Muted)
+                AppText("Voucher ${r.redeemId().take(8)}", color = Muted)
             }
         }
         if (vm.rows("points_transactions").isNotEmpty()) item { SectionTitle("Points activity") }

@@ -20,8 +20,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.ctfly.app.database.remote.bookingId
 import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.resourceId
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.eventId
+import com.ctfly.app.database.remote.productId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.CafeZone
 import com.ctfly.app.domain.VenueDirectory
@@ -59,7 +63,7 @@ fun AppDialogs(vm: AppViewModel) {
     when (dialog) {
         "book" ->
             DialogFrame("Make it your time.", vm) {
-                val r = vm.rows("resources").find { it.text("id") == vm.field("selectedResource") }
+                val r = vm.rows("resources").find { it.resourceId() == vm.field("selectedResource") }
                 if (r != null) {
                     AppText(r.text("name"), fontWeight = FontWeight.Bold)
                     AppText(r.text("description"), color = Muted)
@@ -136,7 +140,7 @@ fun AppDialogs(vm: AppViewModel) {
                             vm.action(
                                 "book",
                                 obj(
-                                    "resource_id" to r.optLong("id"),
+                                    "resource_id" to r.resourceId().toLong(),
                                     "starts_at" to start,
                                     "minutes" to mins.toInt(),
                                     "guests" to guests,
@@ -163,7 +167,7 @@ fun AppDialogs(vm: AppViewModel) {
                 val cart = vm.cart()
                 var total = 0
                 cart.forEach { (id, qty) ->
-                    val p = vm.rows("products").find { it.text("id") == id }
+                    val p = vm.rows("products").find { it.productId() == id }
                     if (p != null) {
                         total += p.optInt("price") * qty
                         Row(
@@ -209,7 +213,7 @@ fun AppDialogs(vm: AppViewModel) {
             }
         "event" ->
             DialogFrame("Enter the tournament", vm) {
-                val e = vm.rows("events").find { it.text("id") == vm.field("selectedEvent") }
+                val e = vm.rows("events").find { it.eventId() == vm.field("selectedEvent") }
                 AppText(e?.text("name") ?: "Tournament", fontWeight = FontWeight.Bold)
                 Input("Team / player name", vm.field("teamName"), { vm.set("teamName", it) })
                 AppText(
@@ -242,7 +246,7 @@ fun AppDialogs(vm: AppViewModel) {
         "pickupScan" -> DialogFrame("Verify café pickup", vm) { StaffPickupContent(vm) }
         "qr" ->
             DialogFrame("Your entry pass", vm) {
-                val b = vm.rows("bookings").find { it.text("id") == vm.field("selectedBooking") }
+                val b = vm.rows("bookings").find { it.bookingId() == vm.field("selectedBooking") }
                 if (b != null && b.optBoolean("paid") && b.text("status") == "Confirmed") {
                     val token = "ctfly:${b.text("token")}"
                     val bitmap =

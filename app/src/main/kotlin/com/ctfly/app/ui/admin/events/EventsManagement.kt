@@ -18,6 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ctfly.app.BuildConfig
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.eventId
+import com.ctfly.app.database.remote.promotionId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.StaffDateFilter
 import com.ctfly.app.domain.dateLabel
@@ -205,7 +207,7 @@ fun StaffEventsScreen(vm: AppViewModel) {
         if (tab == "Competitions") {
             items(
                 vm.rows("events").onStaffDay(vm, "eventHistoryDay", "starts_at"),
-                key = { it.text("id") },
+                key = { it.eventId() },
             ) { e ->
                 SurfaceCard {
                     EventPoster(e.text("poster_url"), Modifier.fillMaxWidth().height(160.dp))
@@ -243,7 +245,7 @@ fun StaffEventsScreen(vm: AppViewModel) {
         } else {
             items(
                 vm.rows("promotions").onStaffDay(vm, "eventHistoryDay", "starts_at"),
-                key = { it.text("id") },
+                key = { it.promotionId() },
             ) { p ->
                 SurfaceCard {
                     AppText(

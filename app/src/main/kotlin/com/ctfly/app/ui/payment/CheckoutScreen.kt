@@ -15,6 +15,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.billId
+import com.ctfly.app.database.remote.paymentId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.money
 import com.ctfly.app.domain.payment.paymentMethodLabel
@@ -63,7 +65,7 @@ fun CheckoutScreen(vm: AppViewModel, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val pay = vm.currentCheckoutPayment()
     val status = pay.text("status")
-    val q = if (pay.text("id").isBlank()) vm.checkoutQuote else pay
+    val q = if (pay.paymentId().isBlank()) vm.checkoutQuote else pay
     val pending = status in listOf("Pending", "Processing")
     val canAct = !vm.busy && !vm.checkoutLeaving
     val feedback = vm.validationError.ifBlank { vm.message }
@@ -73,7 +75,7 @@ fun CheckoutScreen(vm: AppViewModel, onBack: () -> Unit) {
                 .getOrDefault(true)
     LaunchedEffect(expired) { if (expired) vm.refresh(silent = true) }
     LaunchedEffect(vm.field("checkoutSource")) {
-        if (pay.text("id").isBlank() && vm.checkoutQuote.length() == 0) vm.reloadCheckout()
+        if (pay.paymentId().isBlank() && vm.checkoutQuote.length() == 0) vm.reloadCheckout()
     }
     Column(Modifier.fillMaxSize().background(Ink).safeDrawingPadding()) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -254,7 +256,7 @@ fun CheckoutScreen(vm: AppViewModel, onBack: () -> Unit) {
                         AppText("No money was charged.", color = Muted)
                         val receipt =
                             pay.optJSONObject("receipt")
-                                ?: vm.rows("bills").find { it.text("id") == pay.text("bill_id") }
+                                ?: vm.rows("bills").find { it.billId() == pay.text("bill_id") }
                         if (receipt != null)
                             Button(
                                 onClick = {

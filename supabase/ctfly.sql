@@ -60,7 +60,7 @@ comment on column public.staff.password_hash is 'Bcrypt hash. The plain password
 create unique index user_email_key on public."User"(lower(email)) where email is not null;
 create unique index staff_email_key on public.staff(lower(email)) where email is not null;
 create table public.ctfly_sessions (
- id uuid primary key default gen_random_uuid(),
+ session_id uuid primary key default gen_random_uuid(),
  profile_id uuid not null references public.profiles(profile_id) on delete cascade,
  access_hash text not null unique,
  refresh_hash text not null unique,
@@ -102,63 +102,63 @@ create policy "Staff can read their own role row" on public.staff
  for select to anon, authenticated using ((select public.ctfly_uid()) = staff_id);
 
 create table public.resources (
- id bigint generated always as identity primary key, name text not null unique,
+ resource_id bigint generated always as identity primary key, name text not null unique,
  kind text not null check(kind in ('PC','Snooker','Pool','Console','Racing')), zone text not null default 'Standard',
  description text not null, capacity int not null default 1 check(capacity between 1 and 20),
  rate int not null check(rate>0), status text not null default 'Available' check(status in ('Available','Maintenance','Retired')));
 create table public.bookings (
- id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
- resource_id bigint not null references public.resources, starts_at timestamptz not null, ends_at timestamptz not null,
+ booking_id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
+ resource_id bigint not null references public.resources(resource_id), starts_at timestamptz not null, ends_at timestamptz not null,
  guests int not null check(guests>0), total int not null check(total>=0),
  status text not null default 'Reserved' check(status in ('Reserved','Confirmed','Active','Completed','Cancelled','Expired')),
  paid boolean not null default false, token uuid not null unique default gen_random_uuid(), checked_in timestamptz,
  created_at timestamptz not null default now(), check(ends_at>starts_at),
  exclude using gist(resource_id with =, tstzrange(starts_at,ends_at,'[)') with &&)
  where(status in ('Reserved','Confirmed','Active')));
-create table public.categories(id bigint generated always as identity primary key, name text not null unique);
+create table public.categories(category_id bigint generated always as identity primary key, name text not null unique);
 create table public.products (
- id bigint generated always as identity primary key, category_id bigint not null references public.categories,
+ product_id bigint generated always as identity primary key, category_id bigint not null references public.categories(category_id),
  name text not null, price int not null check(price>=0), stock int not null check(stock>=0),
  threshold int not null default 5 check(threshold>=0), image text not null default 'iced_coffee', active boolean not null default true);
-create table public.stock_records(id bigint generated always as identity primary key, product_id bigint not null references public.products,
+create table public.stock_records(stock_id bigint generated always as identity primary key, product_id bigint not null references public.products(product_id),
  quantity int not null, reason text not null, created_at timestamptz not null default now());
-create table public.orders(id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
- booking_id uuid references public.bookings, total int not null check(total>=0), paid boolean not null default false,
+create table public.orders(order_id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
+ booking_id uuid references public.bookings(booking_id), total int not null check(total>=0), paid boolean not null default false,
  status text not null default 'Pending' check(status in ('Pending','Preparing','Ready','Delivered','Cancelled')), created_at timestamptz not null default now());
-create table public.order_items(id bigint generated always as identity primary key, order_id uuid not null references public.orders,
- product_id bigint not null references public.products, name text not null, qty int not null check(qty>0), price int not null check(price>=0));
-create table public.events(id bigint generated always as identity primary key, name text not null, game text not null,
+create table public.order_items(order_item_id bigint generated always as identity primary key, order_id uuid not null references public.orders(order_id),
+ product_id bigint not null references public.products(product_id), name text not null, qty int not null check(qty>0), price int not null check(price>=0));
+create table public.events(event_id bigint generated always as identity primary key, name text not null, game text not null,
  starts_at timestamptz not null, ends_at timestamptz not null, fee int not null check(fee>=0), capacity int not null check(capacity between 2 and 64),
  status text not null default 'Open' check(status in ('Open','Running','Completed','Cancelled')), check(ends_at>starts_at),
  exclude using gist(tstzrange(starts_at,ends_at,'[)') with &&) where(status in ('Open','Running')));
-create table public.registrations(id uuid primary key default gen_random_uuid(), event_id bigint not null references public.events,
+create table public.registrations(registration_id uuid primary key default gen_random_uuid(), event_id bigint not null references public.events(event_id),
  user_id uuid not null references public."User"(user_id), team text not null check(length(team) between 1 and 80), fee int not null,
  paid boolean not null default false, status text not null default 'Registered' check(status in ('Registered','Withdrawn')),
  unique(event_id,user_id));
-create table public.matches(id bigint generated always as identity primary key, event_id bigint not null references public.events,
- round int not null, slot int not null, a uuid references public.registrations, b uuid references public.registrations,
+create table public.matches(match_id bigint generated always as identity primary key, event_id bigint not null references public.events(event_id),
+ round int not null, slot int not null, team_a uuid references public.registrations, team_b uuid references public.registrations,
  winner uuid references public.registrations, done boolean not null default false, unique(event_id,round,slot));
-create table public.bills(id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
+create table public.bills(bill_id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
  kind text not null check(kind in ('Booking','Order','Event','Extension')), source_id uuid not null, subtotal int not null, discount int not null,
  total int not null check(total>=0), points int not null, method text not null default 'Cash at counter', created_at timestamptz not null default now(),
  status text not null default 'Paid' check(status in ('Paid','Void')), void_reason text not null default '');
 create unique index one_paid_bill on public.bills(kind,source_id) where status='Paid';
-create table public.booking_extensions(id uuid primary key default gen_random_uuid(), booking_id uuid not null references public.bookings,
+create table public.booking_extensions(booking_extension_id uuid primary key default gen_random_uuid(), booking_id uuid not null references public.bookings(booking_id),
  minutes int not null check(minutes in (30,60)), amount int not null check(amount>=0), created_at timestamptz not null default now());
-create table public.rewards(id bigint generated always as identity primary key, name text not null, points int not null check(points>0), stock int not null check(stock>=0), active boolean not null default true);
-create table public.redemptions(id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
- reward_id bigint not null references public.rewards, name text not null, points int not null, status text not null default 'Pending', created_at timestamptz not null default now());
-create table public.points_transactions(id bigint generated always as identity primary key, user_id uuid not null references public."User"(user_id),
+create table public.rewards(reward_id bigint generated always as identity primary key, name text not null, points int not null check(points>0), stock int not null check(stock>=0), active boolean not null default true);
+create table public.redemptions(redeem_id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
+ reward_id bigint not null references public.rewards(reward_id), name text not null, points int not null, status text not null default 'Pending', created_at timestamptz not null default now());
+create table public.points_transactions(point_id bigint generated always as identity primary key, user_id uuid not null references public."User"(user_id),
  points int not null, reason text not null, created_at timestamptz not null default now());
-create table public.favorites(user_id uuid not null references public."User"(user_id), product_id bigint not null references public.products, primary key(user_id,product_id));
-create table public.shifts(id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
+create table public.favorites(user_id uuid not null references public."User"(user_id), product_id bigint not null references public.products(product_id), primary key(user_id,product_id));
+create table public.shifts(shift_id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
  starts_at timestamptz not null, ends_at timestamptz not null, status text not null default 'Scheduled' check(status in ('Scheduled','Cancelled')),
  check(ends_at>starts_at), exclude using gist(staff_id with =,tstzrange(starts_at,ends_at,'[)') with &&) where(status='Scheduled'));
-create table public.attendance(id uuid primary key default gen_random_uuid(), shift_id uuid not null unique references public.shifts,
+create table public.attendance(attendance_id uuid primary key default gen_random_uuid(), shift_id uuid not null unique references public.shifts(shift_id),
  clock_in timestamptz not null default now(), clock_out timestamptz, late_minutes int not null default 0, early_minutes int not null default 0, minutes int not null default 0);
-create table public.leave_requests(id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
+create table public.leave_requests(leave_request_id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
  day date not null, reason text not null, status text not null default 'Pending' check(status in ('Pending','Approved','Declined')), created_at timestamptz not null default now());
-create table public.tasks(id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
+create table public.tasks(task_id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
  title text not null, day date not null, done boolean not null default false);
 create table public.checklist(
  checklist_id uuid primary key default gen_random_uuid(),
@@ -167,15 +167,15 @@ create table public.checklist(
  item text not null,
  unique(staff_id,day,item)
 );
-create table public.handovers(id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
+create table public.handovers(handover_id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
  title text not null, note text not null, category text not null, created_at timestamptz not null default now());
 create table public.handover_reads(handover_id uuid not null references public.handovers, staff_id uuid not null references public.staff(staff_id), primary key(handover_id,staff_id));
-create table public.tickets(id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
+create table public.tickets(ticket_id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
  asset text not null, title text not null, priority text not null check(priority in ('Low','Normal','Urgent')), status text not null default 'Open',
  assigned_staff uuid references public.staff(staff_id), resolution text not null default '', created_at timestamptz not null default now());
 -- Idempotent operations: a network retry cannot repeat an order, payment or booking.
 -- Shared idempotency keys cover both customer and staff mutations, so they stay on profiles.profile_id.
-create table public.requests(user_id uuid not null references public.profiles, request_id uuid not null, result jsonb not null, primary key(user_id,request_id));
+create table public.requests(request_id uuid primary key, user_id uuid not null references public.profiles(profile_id), result jsonb not null);
 create index booking_member on public.bookings(user_id,starts_at);
 create index order_member on public.orders(user_id,created_at);
 create index shifts_member on public.shifts(staff_id,starts_at);
@@ -452,11 +452,11 @@ $$;
 
 create function public.ctfly_catalog() returns jsonb language sql security definer set search_path=public, extensions, pg_temp as $$
  select jsonb_build_object(
- 'resources',coalesce((select jsonb_agg(r order by id) from resources r where status<>'Retired'),'[]'::jsonb),
- 'products',coalesce((select jsonb_agg(p order by id) from products p where active),'[]'::jsonb),
- 'categories',coalesce((select jsonb_agg(c order by id) from categories c),'[]'::jsonb),
+ 'resources',coalesce((select jsonb_agg(r order by resource_id) from resources r where status<>'Retired'),'[]'::jsonb),
+ 'products',coalesce((select jsonb_agg(p order by product_id) from products p where active),'[]'::jsonb),
+ 'categories',coalesce((select jsonb_agg(c order by category_id) from categories c),'[]'::jsonb),
  'events',coalesce((select jsonb_agg(e order by starts_at) from events e where status<>'Cancelled' and ends_at>now()),'[]'::jsonb),
- 'rewards',coalesce((select jsonb_agg(r order by id) from rewards r where active),'[]'::jsonb));
+ 'rewards',coalesce((select jsonb_agg(r order by reward_id) from rewards r where active),'[]'::jsonb));
 $$;
 
 create function public.ctfly_snapshot() returns jsonb language plpgsql security definer set search_path=public, extensions, pg_temp as $$
@@ -472,10 +472,10 @@ begin
  result := result || jsonb_build_object(
  'bookings',coalesce((select jsonb_agg(b order by starts_at desc) from (select * from bookings where user_id=me.profile_id or crew order by starts_at desc limit 300) b),'[]'::jsonb),
  'orders',coalesce((select jsonb_agg(o order by created_at desc) from (select * from orders where user_id=me.profile_id or crew order by created_at desc limit 300) o),'[]'::jsonb),
- 'order_items',coalesce((select jsonb_agg(i) from order_items i join orders o on o.id=i.order_id where o.user_id=me.profile_id or crew),'[]'::jsonb),
+ 'order_items',coalesce((select jsonb_agg(i) from order_items i join orders o on o.order_id=i.order_id where o.user_id=me.profile_id or crew),'[]'::jsonb),
  'registrations',coalesce((select jsonb_agg(r) from registrations r where r.user_id=me.profile_id or crew),'[]'::jsonb),
- 'matches',coalesce((select jsonb_agg(jsonb_build_object('id',m.id,'event_id',m.event_id,'round',m.round,'slot',m.slot,'a',m.a,'b',m.b,'winner',m.winner,'done',m.done,'team_a',a.team,'team_b',b.team,'team_winner',w.team) order by m.round,m.slot)
- from matches m left join registrations a on a.id=m.a left join registrations b on b.id=m.b left join registrations w on w.id=m.winner),'[]'::jsonb),
+ 'matches',coalesce((select jsonb_agg(jsonb_build_object('id',m.match_id,'event_id',m.event_id,'round',m.round,'slot',m.slot,'team_a_id',m.team_a,'team_b_id',m.team_b,'a',m.team_a,'b',m.team_b,'winner',m.winner,'done',m.done,'team_a',a.team,'team_b',b.team,'team_winner',w.team) order by m.round,m.slot)
+ from matches m left join registrations a on a.registration_id=m.team_a left join registrations b on b.registration_id=m.team_b left join registrations w on w.registration_id=m.winner),'[]'::jsonb),
  'bills',coalesce((select jsonb_agg(b order by created_at desc) from bills b where b.user_id=me.profile_id or me.role='admin'),'[]'::jsonb),
  'redemptions',coalesce((select jsonb_agg(r) from redemptions r where r.user_id=me.profile_id or crew),'[]'::jsonb),
  'points_transactions',coalesce((select jsonb_agg(p order by created_at desc) from points_transactions p where p.user_id=me.profile_id),'[]'::jsonb),
@@ -484,7 +484,7 @@ begin
  result := result || jsonb_build_object(
  'people',coalesce((select jsonb_agg(jsonb_build_object('id',profile_id,'name',name,'role',role,'active',active,'phone',case when me.role='admin' then phone else '' end)) from profiles where me.role='admin' or role in ('staff','admin')),'[]'::jsonb),
  'shifts',coalesce((select jsonb_agg(s order by starts_at) from shifts s where staff_id=me.profile_id or me.role='admin'),'[]'::jsonb),
- 'attendance',coalesce((select jsonb_agg(a) from attendance a join shifts s on s.id=a.shift_id where s.staff_id=me.profile_id or me.role='admin'),'[]'::jsonb),
+ 'attendance',coalesce((select jsonb_agg(a) from attendance a join shifts s on s.shift_id=a.shift_id where s.staff_id=me.profile_id or me.role='admin'),'[]'::jsonb),
  'leave_requests',coalesce((select jsonb_agg(l) from leave_requests l where staff_id=me.profile_id or me.role='admin'),'[]'::jsonb),
  'tasks',coalesce((select jsonb_agg(t order by day) from tasks t where staff_id=me.profile_id or me.role='admin'),'[]'::jsonb),
  'checklist',coalesce((select jsonb_agg(c) from checklist c where staff_id=me.profile_id and day=(now() at time zone 'Asia/Kuala_Lumpur')::date),'[]'::jsonb),
@@ -493,10 +493,10 @@ begin
  'tickets',coalesce((select jsonb_agg(t order by created_at desc) from tickets t),'[]'::jsonb));
  end if;
  if me.role='admin' then result := result || jsonb_build_object(
- 'resources',(select coalesce(jsonb_agg(r order by id),'[]'::jsonb) from resources r),
- 'products',(select coalesce(jsonb_agg(p order by id),'[]'::jsonb) from products p),
+ 'resources',(select coalesce(jsonb_agg(r order by resource_id),'[]'::jsonb) from resources r),
+ 'products',(select coalesce(jsonb_agg(p order by product_id),'[]'::jsonb) from products p),
  'events',(select coalesce(jsonb_agg(e order by starts_at),'[]'::jsonb) from events e),
- 'rewards',(select coalesce(jsonb_agg(r order by id),'[]'::jsonb) from rewards r),
+ 'rewards',(select coalesce(jsonb_agg(r order by reward_id),'[]'::jsonb) from rewards r),
  'stock_records',(select coalesce(jsonb_agg(s order by created_at desc),'[]'::jsonb) from stock_records s)); end if;
  return result;
 end $$;
@@ -507,11 +507,11 @@ declare uid uuid; amount int; spent_total int; discount_total int;
 begin
  if not exists(select 1 from public.profiles p where p.profile_id=public.ctfly_uid() and p.active and p.role in ('staff','admin')
   and exists(select 1 from public.staff s where s.staff_id=p.profile_id)) then raise exception 'Staff access required.'; end if;
- if p_kind='Booking' then select user_id,total into uid,amount from bookings where id=p_id and status='Reserved' and not paid;
- elsif p_kind='Order' then select user_id,total into uid,amount from orders where id=p_id and status<>'Cancelled' and not paid;
- elsif p_kind='Event' then select user_id,fee into uid,amount from registrations where id=p_id and status='Registered' and not paid;
+ if p_kind='Booking' then select user_id,total into uid,amount from bookings where booking_id=p_id and status='Reserved' and not paid;
+ elsif p_kind='Order' then select user_id,total into uid,amount from orders where order_id=p_id and status<>'Cancelled' and not paid;
+ elsif p_kind='Event' then select user_id,fee into uid,amount from registrations where registration_id=p_id and status='Registered' and not paid;
  elsif p_kind in ('Extension30','Extension60') then
-  select b.user_id,(r.rate*(case when p_kind='Extension30' then 30 else 60 end)+30)/60 into uid,amount from bookings b join resources r on r.id=b.resource_id where b.id=p_id and b.paid and b.status in ('Confirmed','Active') and b.ends_at>now();
+  select b.user_id,(r.rate*(case when p_kind='Extension30' then 30 else 60 end)+30)/60 into uid,amount from bookings b join resources r on r.resource_id=b.resource_id where b.booking_id=p_id and b.paid and b.status in ('Confirmed','Active') and b.ends_at>now();
  end if;
  if uid is null then raise exception 'Already paid or no longer payable.'; end if;
  select spent into spent_total from profiles where profile_id=uid;
@@ -538,74 +538,74 @@ begin
  if p_action='book' then
   if me.role<>'customer' then raise exception 'Use a customer account to book.'; end if;
   if me.dob>(now() at time zone 'Asia/Kuala_Lumpur')::date-interval '18 years' then raise exception 'Bookings are 18+.'; end if;
-  select * into r from resources where id=(p_data->>'resource_id')::bigint for update;
+  select * into r from resources where resource_id=(p_data->>'resource_id')::bigint for update;
   n:=(p_data->>'minutes')::int; st:=(p_data->>'starts_at')::timestamptz; en:=st+make_interval(mins=>n);
-  if r.id is null or r.status<>'Available' or n not in (60,90,120,180) or st<now()-interval '1 minute' or st>now()+interval '90 days'
+  if r.resource_id is null or r.status<>'Available' or n not in (60,90,120,180) or st<now()-interval '1 minute' or st>now()+interval '90 days'
    or (p_data->>'guests')::int not between 1 and r.capacity then raise exception 'Choose an available space, valid time and group size.'; end if;
   if (select count(*) from bookings where user_id=me.profile_id and status in ('Reserved','Confirmed','Active'))>=3 then raise exception 'You can hold up to 3 upcoming bookings.'; end if;
-  insert into bookings(user_id,resource_id,starts_at,ends_at,guests,total) values(me.profile_id,r.id,st,en,(p_data->>'guests')::int,(r.rate*n+30)/60) returning id into oid;
+  insert into bookings(user_id,resource_id,starts_at,ends_at,guests,total) values(me.profile_id,r.resource_id,st,en,(p_data->>'guests')::int,(r.rate*n+30)/60) returning booking_id into oid;
   result:=jsonb_build_object('message','Reserved. Pay at the counter before check-in.','id',oid);
  elsif p_action='cancel_booking' then
-  update bookings set status='Cancelled' where id=(p_data->>'id')::uuid and user_id=me.profile_id and status='Reserved' and starts_at>now();
+  update bookings set status='Cancelled' where booking_id=(p_data->>'id')::uuid and user_id=me.profile_id and status='Reserved' and starts_at>now();
   if not found then raise exception 'Only your unpaid, upcoming reservation can be cancelled.'; end if;
  elsif p_action='extend_booking' then
   if me.role<>'admin' then raise exception 'Manager access required.'; end if;
-  select * into b from bookings where id=(p_data->>'id')::uuid for update;
+  select * into b from bookings where booking_id=(p_data->>'id')::uuid for update;
   if b.status<>'Reserved' then raise exception 'Extend unpaid reservations only. For paid sessions create another booking.'; end if;
-  select * into r from resources where id=b.resource_id for update;
+  select * into r from resources where resource_id=b.resource_id for update;
   n:=(p_data->>'minutes')::int;
   if n not in (30,60) then raise exception 'Choose 30 or 60 minutes.'; end if;
-  update bookings set ends_at=ends_at+make_interval(mins=>n),total=total+(r.rate*n+30)/60 where id=b.id;
+  update bookings set ends_at=ends_at+make_interval(mins=>n),total=total+(r.rate*n+30)/60 where booking_id=b.booking_id;
  elsif p_action='order' then
   if me.role<>'customer' then raise exception 'Use a customer account to order.'; end if;
   if jsonb_typeof(p_data->'items')<>'array' or jsonb_array_length(p_data->'items') not between 1 and 30 then raise exception 'Choose 1 to 30 products.'; end if;
   if exists(select 1 from jsonb_array_elements(p_data->'items') x group by x->>'id' having count(*)>1) then raise exception 'Duplicate product.'; end if;
   sid:=nullif(p_data->>'booking_id','')::uuid;
-  if sid is not null and not exists(select 1 from bookings where id=sid and user_id=me.profile_id and status='Active' and ends_at>now()) then raise exception 'Delivery needs your active session.'; end if;
-  insert into orders(user_id,booking_id,total) values(me.profile_id,sid,0) returning id into oid;
+  if sid is not null and not exists(select 1 from bookings where booking_id=sid and user_id=me.profile_id and status='Active' and ends_at>now()) then raise exception 'Delivery needs your active session.'; end if;
+  insert into orders(user_id,booking_id,total) values(me.profile_id,sid,0) returning order_id into oid;
   amount:=0;
   for item in select value from jsonb_array_elements(p_data->'items') order by (value->>'id')::bigint loop
    n:=(item->>'qty')::int;
-   select * into pr from products where id=(item->>'id')::bigint for update;
-   if pr.id is null or not pr.active or n not between 1 and 20 or pr.stock<n then raise exception 'A product is unavailable or has insufficient stock.'; end if;
-   update products set stock=stock-n where id=pr.id;
-   insert into order_items(order_id,product_id,name,qty,price) values(oid,pr.id,pr.name,n,pr.price);
-   insert into stock_records(product_id,quantity,reason) values(pr.id,-n,'Order '||oid);
+   select * into pr from products where product_id=(item->>'id')::bigint for update;
+   if pr.product_id is null or not pr.active or n not between 1 and 20 or pr.stock<n then raise exception 'A product is unavailable or has insufficient stock.'; end if;
+   update products set stock=stock-n where product_id=pr.product_id;
+   insert into order_items(order_id,product_id,name,qty,price) values(oid,pr.product_id,pr.name,n,pr.price);
+   insert into stock_records(product_id,quantity,reason) values(pr.product_id,-n,'Order '||oid);
    amount:=amount+pr.price*n;
   end loop;
-  update orders set total=amount where id=oid;
+  update orders set total=amount where order_id=oid;
   result:=jsonb_build_object('message','Order sent. Pay at the counter.','id',oid);
  elsif p_action='cancel_order' then
-  perform 1 from orders where id=(p_data->>'id')::uuid and user_id=me.profile_id and status='Pending' and not paid for update;
+  perform 1 from orders where order_id=(p_data->>'id')::uuid and user_id=me.profile_id and status='Pending' and not paid for update;
   if not found then raise exception 'Only your pending unpaid order can be cancelled.'; end if;
   for item in select to_jsonb(i) from order_items i where order_id=(p_data->>'id')::uuid order by product_id loop
-   update products set stock=stock+(item->>'qty')::int where id=(item->>'product_id')::bigint;
+   update products set stock=stock+(item->>'qty')::int where product_id=(item->>'product_id')::bigint;
    insert into stock_records(product_id,quantity,reason) values((item->>'product_id')::bigint,(item->>'qty')::int,'Cancelled order');
   end loop;
-  update orders set status='Cancelled' where id=(p_data->>'id')::uuid;
+  update orders set status='Cancelled' where order_id=(p_data->>'id')::uuid;
  elsif p_action='favorite' then
   delete from favorites where user_id=me.profile_id and product_id=(p_data->>'id')::bigint;
   if not found then insert into favorites values(me.profile_id,(p_data->>'id')::bigint); end if;
  elsif p_action='register_event' then
   if me.role<>'customer' then raise exception 'Use a customer account to enter.'; end if;
-  select * into ev from events where id=(p_data->>'event_id')::bigint for update;
-  if ev.id is null or ev.status<>'Open' or ev.starts_at<=now() then raise exception 'Registration is closed.'; end if;
-  if (select count(*) from registrations where event_id=ev.id and status='Registered')>=ev.capacity then raise exception 'This event is full.'; end if;
-  insert into registrations(event_id,user_id,team,fee) values(ev.id,me.profile_id,trim(p_data->>'team'),ev.fee)
+  select * into ev from events where event_id=(p_data->>'event_id')::bigint for update;
+  if ev.event_id is null or ev.status<>'Open' or ev.starts_at<=now() then raise exception 'Registration is closed.'; end if;
+  if (select count(*) from registrations where event_id=ev.event_id and status='Registered')>=ev.capacity then raise exception 'This event is full.'; end if;
+  insert into registrations(event_id,user_id,team,fee) values(ev.event_id,me.profile_id,trim(p_data->>'team'),ev.fee)
   on conflict(event_id,user_id) do update set status='Registered',team=excluded.team,fee=excluded.fee where registrations.status='Withdrawn';
   if not found then raise exception 'You are already registered.'; end if;
  elsif p_action='withdraw_event' then
-  select e.* into ev from events e join registrations g on g.event_id=e.id where g.id=(p_data->>'id')::uuid for update of e;
+  select e.* into ev from events e join registrations g on g.event_id=e.event_id where g.registration_id=(p_data->>'id')::uuid for update of e;
   if ev.status<>'Open' or ev.starts_at<=now() then raise exception 'Registration is closed.'; end if;
-  update registrations set status='Withdrawn' where id=(p_data->>'id')::uuid and user_id=me.profile_id and not paid;
+  update registrations set status='Withdrawn' where registration_id=(p_data->>'id')::uuid and user_id=me.profile_id and not paid;
   if not found then raise exception 'Only unpaid entries can be withdrawn.'; end if;
  elsif p_action='redeem' then
   if me.role<>'customer' then raise exception 'Customer membership required.'; end if;
-  select * into rw from rewards where id=(p_data->>'id')::bigint for update;
-  if rw.id is null or not rw.active or rw.stock<1 or me.points<rw.points then raise exception 'Not enough points or reward stock.'; end if;
+  select * into rw from rewards where reward_id=(p_data->>'id')::bigint for update;
+  if rw.reward_id is null or not rw.active or rw.stock<1 or me.points<rw.points then raise exception 'Not enough points or reward stock.'; end if;
   update profiles set points=points-rw.points where profile_id=me.profile_id;
-  update rewards set stock=stock-1 where id=rw.id;
-  insert into redemptions(user_id,reward_id,name,points) values(me.profile_id,rw.id,rw.name,rw.points);
+  update rewards set stock=stock-1 where reward_id=rw.reward_id;
+  insert into redemptions(user_id,reward_id,name,points) values(me.profile_id,rw.reward_id,rw.name,rw.points);
   insert into points_transactions(user_id,points,reason) values(me.profile_id,-rw.points,'Redeemed '||rw.name);
  elsif p_action='profile' then
   update profiles set name=trim(p_data->>'name'),phone=left(p_data->>'phone',30) where profile_id=me.profile_id;
@@ -614,11 +614,11 @@ begin
   if p_action='pay' then
    sid:=(p_data->>'id')::uuid;
    if p_data->>'kind'='Booking' then
-    select user_id,total into uid,amount from bookings where id=sid and status='Reserved' and not paid for update;
+    select user_id,total into uid,amount from bookings where booking_id=sid and status='Reserved' and not paid for update;
    elsif p_data->>'kind'='Order' then
-    select user_id,total into uid,amount from orders where id=sid and status<>'Cancelled' and not paid for update;
+    select user_id,total into uid,amount from orders where order_id=sid and status<>'Cancelled' and not paid for update;
    elsif p_data->>'kind'='Event' then
-    select user_id,fee into uid,amount from registrations where id=sid and status='Registered' and not paid for update;
+    select user_id,fee into uid,amount from registrations where registration_id=sid and status='Registered' and not paid for update;
    else raise exception 'Invalid payment source.'; end if;
    if uid is null then raise exception 'Already paid or no longer payable.'; end if;
    select * into target from profiles where profile_id=uid for update;
@@ -628,51 +628,51 @@ begin
    insert into bills(user_id,kind,source_id,subtotal,discount,total,points) values(uid,p_data->>'kind',sid,amount,disc,amount-disc,earned);
    update profiles set points=points+earned,spent=spent+amount-disc where profile_id=uid;
    insert into points_transactions(user_id,points,reason) values(uid,earned,'Counter payment');
-   if p_data->>'kind'='Booking' then update bookings set paid=true,status='Confirmed' where id=sid;
-   elsif p_data->>'kind'='Order' then update orders set paid=true where id=sid;
-   else update registrations set paid=true where id=sid; end if;
+   if p_data->>'kind'='Booking' then update bookings set paid=true,status='Confirmed' where booking_id=sid;
+   elsif p_data->>'kind'='Order' then update orders set paid=true where order_id=sid;
+   else update registrations set paid=true where registration_id=sid; end if;
    result:=jsonb_build_object('message','Cash payment recorded: RM '||to_char((amount-disc)/100.0,'FM9999990.00'));
   elsif p_action='extend_paid' then
-   select * into b from bookings where id=(p_data->>'id')::uuid for update;
+   select * into b from bookings where booking_id=(p_data->>'id')::uuid for update;
    n:=(p_data->>'minutes')::int;
-   if b.id is null or not b.paid or b.status not in ('Confirmed','Active') or b.ends_at<=now() or n not in (30,60) then raise exception 'Choose a live paid booking and 30 or 60 extra minutes.'; end if;
-   select * into r from resources where id=b.resource_id for update;
+   if b.booking_id is null or not b.paid or b.status not in ('Confirmed','Active') or b.ends_at<=now() or n not in (30,60) then raise exception 'Choose a live paid booking and 30 or 60 extra minutes.'; end if;
+   select * into r from resources where resource_id=b.resource_id for update;
    if r.status<>'Available' then raise exception 'Space is not available.'; end if;
    select * into target from profiles where profile_id=b.user_id for update;
    amount:=(r.rate*n+30)/60;
    disc:=amount*(case when target.spent>=100000 then 10 when target.spent>=30000 then 5 else 0 end)/100;
    if nullif(p_data->>'expected_total','')::int is distinct from amount-disc then raise exception 'The payment amount changed. Reopen the extension quote.'; end if;
    earned:=(amount-disc)/100;
-   update bookings set ends_at=ends_at+make_interval(mins=>n),total=total+amount where id=b.id;
-   insert into booking_extensions(booking_id,minutes,amount) values(b.id,n,amount) returning id into oid;
+   update bookings set ends_at=ends_at+make_interval(mins=>n),total=total+amount where booking_id=b.booking_id;
+   insert into booking_extensions(booking_id,minutes,amount) values(b.booking_id,n,amount) returning booking_extension_id into oid;
    insert into bills(user_id,kind,source_id,subtotal,discount,total,points) values(b.user_id,'Extension',oid,amount,disc,amount-disc,earned);
    update profiles set spent=spent+amount-disc,points=points+earned where profile_id=b.user_id;
    insert into points_transactions(user_id,points,reason) values(b.user_id,earned,'Session extension payment');
    result:=jsonb_build_object('message','Cash received and session extended by '||n||' minutes.');
   elsif p_action='check_in' then
    select * into b from bookings where token=(replace(p_data->>'token','ctfly:',''))::uuid for update;
-   if b.id is null or not b.paid or b.status<>'Confirmed' or now()<b.starts_at or now()>=b.ends_at then raise exception 'QR must be paid, unused and within the reserved time.'; end if;
-   if not exists(select 1 from resources where id=b.resource_id and status='Available') then raise exception 'Space is unavailable. Contact a manager.'; end if;
-   update bookings set status='Active',checked_in=now() where id=b.id;
+   if b.booking_id is null or not b.paid or b.status<>'Confirmed' or now()<b.starts_at or now()>=b.ends_at then raise exception 'QR must be paid, unused and within the reserved time.'; end if;
+   if not exists(select 1 from resources where resource_id=b.resource_id and status='Available') then raise exception 'Space is unavailable. Contact a manager.'; end if;
+   update bookings set status='Active',checked_in=now() where booking_id=b.booking_id;
    result:=jsonb_build_object('message','Checked in. The original booking end time applies.');
   elsif p_action='end_session' then
-   update bookings set status='Completed' where id=(p_data->>'id')::uuid and status='Active';
+   update bookings set status='Completed' where booking_id=(p_data->>'id')::uuid and status='Active';
    if not found then raise exception 'Choose an active session.'; end if;
   elsif p_action='order_status' then
-   update orders set status=p_data->>'status' where id=(p_data->>'id')::uuid and paid and
+   update orders set status=p_data->>'status' where order_id=(p_data->>'id')::uuid and paid and
    ((status='Pending' and p_data->>'status'='Preparing') or (status='Preparing' and p_data->>'status'='Ready') or (status='Ready' and p_data->>'status'='Delivered'));
    if not found then raise exception 'Pay first, then advance the order one stage.'; end if;
   elsif p_action='collect_reward' then
-   update redemptions set status='Collected' where id=(p_data->>'id')::uuid and status='Pending';
+   update redemptions set status='Collected' where redeem_id=(p_data->>'id')::uuid and status='Pending';
    if not found then raise exception 'Voucher already collected.'; end if;
   elsif p_action='clock' then
-   select * into sh from shifts where id=(p_data->>'id')::uuid and staff_id=me.profile_id and status='Scheduled' for update;
-   if sh.id is null then raise exception 'Choose your scheduled shift.'; end if;
-   if not exists(select 1 from attendance where shift_id=sh.id) then
+   select * into sh from shifts where shift_id=(p_data->>'id')::uuid and staff_id=me.profile_id and status='Scheduled' for update;
+   if sh.shift_id is null then raise exception 'Choose your scheduled shift.'; end if;
+   if not exists(select 1 from attendance where shift_id=sh.shift_id) then
     if now()<sh.starts_at-interval '30 minutes' or now()>=sh.ends_at then raise exception 'Clock in from 30 minutes before your shift until its end.'; end if;
-    insert into attendance(shift_id,late_minutes) values(sh.id,greatest(0,floor(extract(epoch from now()-sh.starts_at)/60)::int));
+    insert into attendance(shift_id,late_minutes) values(sh.shift_id,greatest(0,floor(extract(epoch from now()-sh.starts_at)/60)::int));
    else
-    update attendance set clock_out=now(),minutes=greatest(0,floor(extract(epoch from now()-clock_in)/60)::int),early_minutes=greatest(0,floor(extract(epoch from sh.ends_at-now())/60)::int) where shift_id=sh.id and clock_out is null;
+    update attendance set clock_out=now(),minutes=greatest(0,floor(extract(epoch from now()-clock_in)/60)::int),early_minutes=greatest(0,floor(extract(epoch from sh.ends_at-now())/60)::int) where shift_id=sh.shift_id and clock_out is null;
     if not found then raise exception 'This shift is already clocked out.'; end if;
    end if;
   elsif p_action='leave' then
@@ -683,7 +683,7 @@ begin
    if not exists(select 1 from profiles where profile_id=uid and active and role in ('staff','admin')) or length(trim(p_data->>'title'))<2 then raise exception 'Choose a staff account and task title.'; end if;
    insert into tasks(staff_id,title,day) values(uid,trim(p_data->>'title'),(p_data->>'day')::date);
   elsif p_action='task_done' then
-   update tasks set done=not done where id=(p_data->>'id')::uuid and (staff_id=me.profile_id or me.role='admin');
+   update tasks set done=not done where task_id=(p_data->>'id')::uuid and (staff_id=me.profile_id or me.role='admin');
   elsif p_action='checklist' then
    if p_data->>'item' not in ('Sanitize desks','Test headsets','Check network','Count cues & balls','Stock drinks','Closing safety check') then raise exception 'Unknown checklist item.'; end if;
    delete from checklist c where c.staff_id=me.profile_id and c.day=(now() at time zone 'Asia/Kuala_Lumpur')::date and c.item=p_data->>'item';
@@ -693,51 +693,51 @@ begin
    if length(trim(p_data->>'title'))<2 or length(trim(p_data->>'note'))<2 then raise exception 'Enter a title and note.'; end if;
    insert into handovers(staff_id,title,note,category) values(me.profile_id,p_data->>'title',p_data->>'note',p_data->>'category');
   elsif p_action='ack' then
-   if not exists(select 1 from handovers where id=(p_data->>'id')::uuid and staff_id<>me.profile_id) then raise exception 'Acknowledge another colleague’s note.'; end if;
+   if not exists(select 1 from handovers where handover_id=(p_data->>'id')::uuid and staff_id<>me.profile_id) then raise exception 'Acknowledge another colleague’s note.'; end if;
    insert into handover_reads values((p_data->>'id')::uuid,me.profile_id) on conflict do nothing;
   elsif p_action='ticket' then
    if length(trim(p_data->>'asset'))<2 or length(trim(p_data->>'title'))<2 then raise exception 'Enter the equipment and issue.'; end if;
    insert into tickets(staff_id,asset,title,priority) values(me.profile_id,p_data->>'asset',p_data->>'title',p_data->>'priority');
   else
-   select * into tk from tickets where id=(p_data->>'id')::uuid for update;
-   if tk.id is null then raise exception 'Issue not found.'; end if;
-   if p_action='claim' and tk.status='Open' then update tickets set assigned_staff=me.profile_id,status='In progress' where id=tk.id;
+   select * into tk from tickets where ticket_id=(p_data->>'id')::uuid for update;
+   if tk.ticket_id is null then raise exception 'Issue not found.'; end if;
+   if p_action='claim' and tk.status='Open' then update tickets set assigned_staff=me.profile_id,status='In progress' where ticket_id=tk.ticket_id;
    elsif p_action='resolve' and tk.status='In progress' and (tk.assigned_staff=me.profile_id or me.role='admin') and length(trim(p_data->>'resolution'))>=3 then
-    update tickets set status='Resolved',resolution=p_data->>'resolution' where id=tk.id;
+    update tickets set status='Resolved',resolution=p_data->>'resolution' where ticket_id=tk.ticket_id;
    elsif p_action='reopen' and tk.status='Resolved' and (tk.staff_id=me.profile_id or tk.assigned_staff=me.profile_id or me.role='admin') then
-    update tickets set status='Open',assigned_staff=null,resolution='' where id=tk.id;
+    update tickets set status='Open',assigned_staff=null,resolution='' where ticket_id=tk.ticket_id;
    else raise exception 'This issue cannot be changed. Resolution requires a note and the assigned staff member.'; end if;
   end if;
  elsif p_action in ('save_resource','save_product','restock','save_event','save_reward','save_category','schedule','weekly_roster','void_bill','member_profile','cancel_shift','leave_decision','member_status','bracket','winner') then
   if me.role<>'admin' then raise exception 'Manager access required.'; end if;
-  bid:=nullif(p_data->>'id','')::bigint;
+  bid:=nullif(coalesce(case p_action when 'save_resource' then p_data->>'resource_id' when 'save_category' then p_data->>'category_id' when 'save_product' then p_data->>'product_id' when 'restock' then p_data->>'product_id' when 'save_event' then p_data->>'event_id' when 'save_reward' then p_data->>'reward_id' else null end,p_data->>'id'),'')::bigint;
   if p_action='save_resource' then
    if bid is not null then
-    perform 1 from resources where id=bid for update;
+    perform 1 from resources where resource_id=bid for update;
     if p_data->>'status'<>'Available' and exists(select 1 from bookings where resource_id=bid and status in ('Reserved','Confirmed','Active')) then raise exception 'Resolve upcoming bookings before taking a space offline.'; end if;
-    update resources set name=trim(p_data->>'name'),kind=p_data->>'kind',zone=p_data->>'zone',description=p_data->>'description',rate=(p_data->>'rate')::int,capacity=(p_data->>'capacity')::int,status=p_data->>'status' where id=bid;
+    update resources set name=trim(p_data->>'name'),kind=p_data->>'kind',zone=p_data->>'zone',description=p_data->>'description',rate=(p_data->>'rate')::int,capacity=(p_data->>'capacity')::int,status=p_data->>'status' where resource_id=bid;
    else insert into resources(name,kind,zone,description,rate,capacity) values(trim(p_data->>'name'),p_data->>'kind',p_data->>'zone',p_data->>'description',(p_data->>'rate')::int,(p_data->>'capacity')::int); end if;
   elsif p_action='save_category' then
    if bid is null then insert into categories(name) values(trim(p_data->>'name'));
-   else update categories set name=trim(p_data->>'name') where id=bid; end if;
+   else update categories set name=trim(p_data->>'name') where category_id=bid; end if;
   elsif p_action='save_product' then
    if bid is null then insert into products(category_id,name,price,stock,threshold,image) values((p_data->>'category_id')::bigint,p_data->>'name',(p_data->>'price')::int,0,(p_data->>'threshold')::int,p_data->>'image');
-   else update products set category_id=(p_data->>'category_id')::bigint,name=p_data->>'name',price=(p_data->>'price')::int,threshold=(p_data->>'threshold')::int,image=p_data->>'image',active=(p_data->>'active')::boolean where id=bid; end if;
+   else update products set category_id=(p_data->>'category_id')::bigint,name=p_data->>'name',price=(p_data->>'price')::int,threshold=(p_data->>'threshold')::int,image=p_data->>'image',active=(p_data->>'active')::boolean where product_id=bid; end if;
   elsif p_action='restock' then
    n:=(p_data->>'quantity')::int;
    if n not between 1 and 10000 then raise exception 'Quantity must be 1–10000.'; end if;
-   update products set stock=stock+n where id=bid;
+   update products set stock=stock+n where product_id=bid;
    insert into stock_records(product_id,quantity,reason) values(bid,n,p_data->>'reason');
   elsif p_action='save_event' then
    if bid is null then insert into events(name,game,starts_at,ends_at,fee,capacity) values(p_data->>'name',p_data->>'game',(p_data->>'starts_at')::timestamptz,(p_data->>'ends_at')::timestamptz,(p_data->>'fee')::int,(p_data->>'capacity')::int);
    else
-    perform 1 from events where id=bid for update;
+    perform 1 from events where event_id=bid for update;
     if exists(select 1 from registrations where event_id=bid and status='Registered') then raise exception 'Events with entrants cannot be edited or cancelled.'; end if;
-    update events set name=p_data->>'name',game=p_data->>'game',starts_at=(p_data->>'starts_at')::timestamptz,ends_at=(p_data->>'ends_at')::timestamptz,fee=(p_data->>'fee')::int,capacity=(p_data->>'capacity')::int,status=p_data->>'status' where id=bid;
+    update events set name=p_data->>'name',game=p_data->>'game',starts_at=(p_data->>'starts_at')::timestamptz,ends_at=(p_data->>'ends_at')::timestamptz,fee=(p_data->>'fee')::int,capacity=(p_data->>'capacity')::int,status=p_data->>'status' where event_id=bid;
    end if;
   elsif p_action='save_reward' then
    if bid is null then insert into rewards(name,points,stock) values(p_data->>'name',(p_data->>'points')::int,(p_data->>'stock')::int);
-   else update rewards set name=p_data->>'name',points=(p_data->>'points')::int,stock=(p_data->>'stock')::int,active=(p_data->>'active')::boolean where id=bid; end if;
+   else update rewards set name=p_data->>'name',points=(p_data->>'points')::int,stock=(p_data->>'stock')::int,active=(p_data->>'active')::boolean where reward_id=bid; end if;
   elsif p_action='schedule' then
    uid:=coalesce(nullif(p_data->>'staff_id','')::uuid,nullif(p_data->>'user_id','')::uuid); st:=(p_data->>'starts_at')::timestamptz; en:=(p_data->>'ends_at')::timestamptz;
    if not exists(select 1 from profiles where profile_id=uid and active and role in ('staff','admin')) or en>st+interval '16 hours' or st<now() then raise exception 'Choose active staff and a future shift of at most 16 hours.'; end if;
@@ -760,62 +760,62 @@ begin
    end loop;
    result:=jsonb_build_object('message','Weekly roster created.');
   elsif p_action='void_bill' then
-   select * into invoice from bills where id=(p_data->>'bill_id')::uuid and status='Paid' for update;
-   if invoice.id is null or length(trim(p_data->>'reason'))<3 then raise exception 'Choose a paid bill and enter a reason.'; end if;
+   select * into invoice from bills where bill_id=(p_data->>'bill_id')::uuid and status='Paid' for update;
+   if invoice.bill_id is null or length(trim(p_data->>'reason'))<3 then raise exception 'Choose a paid bill and enter a reason.'; end if;
    select * into target from profiles where profile_id=invoice.user_id for update;
    if target.points<invoice.points then raise exception 'Earned points have already been spent. Cannot void this payment.'; end if;
    if invoice.kind='Booking' then
     if exists(select 1 from booking_extensions where booking_id=invoice.source_id) then raise exception 'An extended booking cannot be voided here.'; end if;
-    update bookings set paid=false,status='Reserved' where id=invoice.source_id and status='Confirmed' and starts_at>now();
-   elsif invoice.kind='Order' then update orders set paid=false where id=invoice.source_id and status='Pending';
+    update bookings set paid=false,status='Reserved' where booking_id=invoice.source_id and status='Confirmed' and starts_at>now();
+   elsif invoice.kind='Order' then update orders set paid=false where order_id=invoice.source_id and status='Pending';
    elsif invoice.kind='Event' then
-    update registrations set paid=false where id=invoice.source_id and exists(select 1 from events where id=registrations.event_id and status='Open');
+    update registrations set paid=false where registration_id=invoice.source_id and exists(select 1 from events where event_id=registrations.event_id and status='Open');
    else raise exception 'Session extensions cannot be voided after time has been allocated.'; end if;
    if not found then raise exception 'Only unfulfilled payments can be voided. Resolve used services with the manager.'; end if;
-   update bills set status='Void',void_reason=p_data->>'reason' where id=invoice.id;
+   update bills set status='Void',void_reason=p_data->>'reason' where bill_id=invoice.bill_id;
    update profiles set points=points-invoice.points,spent=spent-invoice.total where profile_id=invoice.user_id;
    insert into points_transactions(user_id,points,reason) values(invoice.user_id,-invoice.points,'Voided counter payment');
    result:=jsonb_build_object('message','Payment voided. Return any cash to the customer and reconcile the till.');
   elsif p_action='member_profile' then
    update profiles set name=trim(p_data->>'name'),phone=p_data->>'phone' where profile_id=coalesce(nullif(p_data->>'profile_id','')::uuid,nullif(p_data->>'user_id','')::uuid) and role='customer';
   elsif p_action='cancel_shift' then
-   update shifts set status='Cancelled' where id=(p_data->>'shift_id')::uuid and starts_at>now() and not exists(select 1 from attendance where shift_id=(p_data->>'shift_id')::uuid);
+   update shifts set status='Cancelled' where shift_id=(p_data->>'shift_id')::uuid and starts_at>now() and not exists(select 1 from attendance where shift_id=(p_data->>'shift_id')::uuid);
    if not found then raise exception 'Only upcoming shifts without attendance can be cancelled.'; end if;
   elsif p_action='leave_decision' then
    if p_data->>'status' not in ('Approved','Declined') then raise exception 'Invalid leave decision.'; end if;
-   if p_data->>'status'='Approved' and exists(select 1 from shifts s join leave_requests l on l.staff_id=s.staff_id where l.id=(p_data->>'leave_id')::uuid and s.status='Scheduled' and tstzrange(s.starts_at,s.ends_at,'[)') && tstzrange(l.day::timestamp at time zone 'Asia/Kuala_Lumpur',(l.day+1)::timestamp at time zone 'Asia/Kuala_Lumpur','[)')) then raise exception 'Cancel overlapping shifts before approving leave.'; end if;
-   update leave_requests set status=p_data->>'status' where id=(p_data->>'leave_id')::uuid and status='Pending';
+   if p_data->>'status'='Approved' and exists(select 1 from shifts s join leave_requests l on l.staff_id=s.staff_id where l.leave_request_id=(p_data->>'leave_id')::uuid and s.status='Scheduled' and tstzrange(s.starts_at,s.ends_at,'[)') && tstzrange(l.day::timestamp at time zone 'Asia/Kuala_Lumpur',(l.day+1)::timestamp at time zone 'Asia/Kuala_Lumpur','[)')) then raise exception 'Cancel overlapping shifts before approving leave.'; end if;
+   update leave_requests set status=p_data->>'status' where leave_request_id=(p_data->>'leave_id')::uuid and status='Pending';
   elsif p_action='member_status' then
    update profiles set active=(p_data->>'active')::boolean where profile_id=coalesce(nullif(p_data->>'profile_id','')::uuid,nullif(p_data->>'user_id','')::uuid) and role='customer';
   elsif p_action='bracket' then
-   select * into ev from events where id=(p_data->>'event_id')::bigint for update;
-   if ev.id is null or ev.status<>'Open' then raise exception 'Choose an open event.'; end if;
-   if exists(select 1 from registrations where event_id=ev.id and status='Registered' and not paid) then raise exception 'Collect all entry fees before generating the bracket.'; end if;
-   select array_agg(id order by id) into ids from registrations where event_id=ev.id and status='Registered';
+   select * into ev from events where event_id=(p_data->>'event_id')::bigint for update;
+   if ev.event_id is null or ev.status<>'Open' then raise exception 'Choose an open event.'; end if;
+   if exists(select 1 from registrations where event_id=ev.event_id and status='Registered' and not paid) then raise exception 'Collect all entry fees before generating the bracket.'; end if;
+   select array_agg(registration_id order by registration_id) into ids from registrations where event_id=ev.event_id and status='Registered';
    n:=coalesce(array_length(ids,1),0); if n<2 then raise exception 'At least two paid teams are required.'; end if;
    size:=2; while size<n loop size:=size*2; end loop;
    -- Spread byes: each first-round pair has at least one team.
-   for j in 1..size/2 loop insert into matches(event_id,round,slot,a,b) values(ev.id,1,j,ids[j],ids[j+size/2]); end loop;
+   for j in 1..size/2 loop insert into matches(event_id,round,slot,team_a,team_b) values(ev.event_id,1,j,ids[j],ids[j+size/2]); end loop;
    rd:=2; size:=size/2;
-   while size>1 loop for j in 1..size/2 loop insert into matches(event_id,round,slot) values(ev.id,rd,j); end loop; size:=size/2; rd:=rd+1; end loop;
-   for m in select mm.* from matches mm where mm.event_id=ev.id and mm.round=1 and mm.b is null loop
-    update matches set winner=m.a,done=true where id=m.id;
-    if mod(m.slot,2)=1 then update matches set a=m.a where event_id=ev.id and round=2 and slot=(m.slot+1)/2;
-    else update matches set b=m.a where event_id=ev.id and round=2 and slot=(m.slot+1)/2; end if;
+   while size>1 loop for j in 1..size/2 loop insert into matches(event_id,round,slot) values(ev.event_id,rd,j); end loop; size:=size/2; rd:=rd+1; end loop;
+   for m in select mm.* from matches mm where mm.event_id=ev.event_id and mm.round=1 and mm.team_b is null loop
+    update matches set winner=m.team_a,done=true where match_id=m.match_id;
+    if mod(m.slot,2)=1 then update matches set team_a=m.team_a where event_id=ev.event_id and round=2 and slot=(m.slot+1)/2;
+    else update matches set team_b=m.team_a where event_id=ev.event_id and round=2 and slot=(m.slot+1)/2; end if;
    end loop;
-   update events set status='Running' where id=ev.id;
+   update events set status='Running' where event_id=ev.event_id;
   elsif p_action='winner' then
-   select * into m from matches where id=(p_data->>'match_id')::bigint for update;
+   select * into m from matches where match_id=(p_data->>'match_id')::bigint for update;
    winner_id:=(p_data->>'winner')::uuid;
-   if m.id is null or m.done or m.a is null or m.b is null or winner_id is null or winner_id not in (m.a,m.b) then raise exception 'Choose a participant in an unfinished match.'; end if;
-   update matches set winner=winner_id,done=true where id=m.id;
-   if mod(m.slot,2)=1 then update matches set a=winner_id where event_id=m.event_id and round=m.round+1 and slot=(m.slot+1)/2;
-   else update matches set b=winner_id where event_id=m.event_id and round=m.round+1 and slot=(m.slot+1)/2; end if;
-   if not found then update events set status='Completed' where id=m.event_id; end if;
+   if m.match_id is null or m.done or m.team_a is null or m.team_b is null or winner_id is null or winner_id not in (m.team_a,m.team_b) then raise exception 'Choose a participant in an unfinished match.'; end if;
+   update matches set winner=winner_id,done=true where match_id=m.match_id;
+   if mod(m.slot,2)=1 then update matches set team_a=winner_id where event_id=m.event_id and round=m.round+1 and slot=(m.slot+1)/2;
+   else update matches set team_b=winner_id where event_id=m.event_id and round=m.round+1 and slot=(m.slot+1)/2; end if;
+   if not found then update events set status='Completed' where event_id=m.event_id; end if;
   end if;
  else raise exception 'Unknown action.';
  end if;
- insert into requests values(me.profile_id,p_request,result);
+ insert into requests(user_id,request_id,result) values(me.profile_id,p_request,result);
  return result;
 exception when exclusion_violation then raise exception 'That time overlaps an existing booking, event or shift. Choose another time.';
 end $$;
@@ -839,7 +839,7 @@ insert into resources(name,kind,zone,description,capacity,rate) values
 insert into categories(name) values('Drinks'),('Food'),('Game cards');
 insert into products(category_id,name,price,stock,image) values
 (1,'Iced coffee',650,24,'iced_coffee'),(1,'Energy drink',800,18,'energy_drink'),(1,'Mineral water',250,30,'mineral_water'),(1,'Iced lemon tea',550,20,'iced_lemon_tea'),(2,'Cup noodles',550,12,'cup_noodles'),(2,'Potato chips',450,14,'potato_chips'),(2,'Chicken burger',1250,12,'chicken_burger'),(2,'French fries',600,20,'fries'),(3,'Steam RM 20 card',2000,6,'game_card');
-insert into stock_records(product_id,quantity,reason) select id,stock,'Opening stock' from products;
+insert into stock_records(product_id,quantity,reason) select product_id,stock,'Opening stock' from products;
 insert into events(name,game,starts_at,ends_at,fee,capacity) values('Friday Night Valorant','Valorant',date_trunc('day',now())+interval '7 days 10 hours',date_trunc('day',now())+interval '7 days 14 hours',1500,8),('Weekend FC Cup','EA Sports FC',date_trunc('day',now())+interval '9 days 10 hours',date_trunc('day',now())+interval '9 days 14 hours',1000,8);
 insert into rewards(name,points,stock) values('1 hour Standard PC voucher',100,20),('Free iced coffee',70,15),('CTFLY mouse pad',250,8);
 
@@ -976,20 +976,20 @@ begin
 
  -- Convert the original solo VIP rigs while keeping their existing resource IDs.
  for r in select * from public.resources where kind='PC' and zone='VIP'
-   and capacity=1 and name ~ '^VIP Rig [0-9]{2}$' order by name,id loop
+   and capacity=1 and name ~ '^VIP Rig [0-9]{2}$' order by name,resource_id loop
   slot:=slot+1;
   if slot>9 then continue; end if;
   cap:=case when slot<=3 then 1 when slot<=6 then 2 else 4 end;
   zone_name:=case cap when 1 then 'Solo' when 2 then 'Duo' else 'Squad' end;
   number:=(slot-1)%3+1;
   room_name:='VIP Room '||zone_name||' '||lpad(number::text,2,'0');
-  if exists(select 1 from public.resources where name=room_name and id<>r.id) then
+  if exists(select 1 from public.resources where name=room_name and resource_id<>r.resource_id) then
    raise exception 'Room name % already exists. No changes applied; resolve the name first.',room_name;
   end if;
   update public.resources set kind='VIPRoom',name=room_name,zone=zone_name,capacity=cap,
    rate=case cap when 1 then 1500 when 2 then 2800 else 5200 end,
    description='L1 · Private room · '||cap||' gaming PC(s) · price for the whole room'
-   where id=r.id;
+   where resource_id=r.resource_id;
  end loop;
 
  -- Keep the existing racing resource IDs and rates.
@@ -1019,7 +1019,7 @@ select kind,zone,capacity,rate,count(*) from public.resources
 
 -- Section: settings-feedback
 create table if not exists public.app_feedback (
- id uuid primary key default gen_random_uuid(),
+ feedback_id uuid primary key default gen_random_uuid(),
  user_id uuid not null references public."User"(user_id),
  title text not null check(char_length(btrim(title)) between 3 and 120),
  body text not null check(char_length(btrim(body)) between 10 and 2000),
@@ -1065,13 +1065,13 @@ declare definition text; addition text := $patch$
   end if;
   insert into app_feedback(user_id,title,body,category,rating)
    values(me.profile_id,btrim(p_data->>'title'),btrim(p_data->>'body'),p_data->>'category',(p_data->>'rating')::int)
-   returning id into oid;
+   returning feedback_id into oid;
   result:=jsonb_build_object('message','Feedback sent. Thank you!','id',oid);
  elsif p_action='feedback_status' then
   if me.role not in ('staff','admin') then raise exception 'Staff access required.'; end if;
   if coalesce(p_data->>'status','') not in ('Reviewed','Resolved') then raise exception 'Choose Reviewed or Resolved.'; end if;
   update app_feedback set status=p_data->>'status',updated_at=now(),updated_by=me.profile_id
-   where id=(p_data->>'id')::uuid;
+   where feedback_id=(p_data->>'id')::uuid;
   if not found then raise exception 'Feedback no longer exists.'; end if;
   result:=jsonb_build_object('message','Feedback status updated.');
  elsif p_action='book' then$patch$;
@@ -1102,7 +1102,7 @@ alter table public.bookings alter column hold_expires_at set default now()+inter
 alter table public.orders alter column hold_expires_at set default now()+interval '10 minutes';
 alter table public.registrations alter column hold_expires_at set default now()+interval '10 minutes';
 create table public.test_payments (
- id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
+ payment_id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
  kind text not null check(kind in ('Booking','Order','Event')), source_id uuid not null,
  method text not null check(method in ('TNG','FPX','Card')),
  environment text not null default 'test' check(environment='test'),
@@ -1114,7 +1114,7 @@ create table public.test_payments (
  items jsonb not null, status text not null default 'Pending'
  check(status in ('Pending','Processing','Succeeded','Failed','Cancelled','Expired','Refunded')),
  expires_at timestamptz not null, created_at timestamptz not null default now(), settled_at timestamptz,
- bill_id uuid unique references public.bills);
+ bill_id uuid unique references public.bills(bill_id));
 create unique index one_active_test_checkout on public.test_payments(kind,source_id) where status in ('Pending','Processing');
 create index test_payments_user_created on public.test_payments(user_id,created_at desc);
 create index test_payments_status_expiry on public.test_payments(status,expires_at);
@@ -1126,7 +1126,7 @@ language plpgsql set search_path=public, extensions, pg_temp as $$
 declare i record;
 begin
  for i in select product_id,qty from order_items where order_id=p_id order by product_id loop
-  update products set stock=stock+i.qty where id=i.product_id;
+  update products set stock=stock+i.qty where product_id=i.product_id;
   insert into stock_records(product_id,quantity,reason) values(i.product_id,i.qty,'Released checkout hold');
  end loop;
 end $$;
@@ -1136,16 +1136,16 @@ language plpgsql set search_path=public, extensions, pg_temp as $$
 declare held record;
 begin
  update bookings set status='Expired' where not paid and status='Reserved' and hold_expires_at<=now();
- for held in select id from orders where not paid and status='Pending' and hold_expires_at<=now() order by id for update loop
-  update orders set status='Cancelled' where id=held.id;
-  perform private.restore_test_order(held.id);
+ for held in select order_id from orders where not paid and status='Pending' and hold_expires_at<=now() order by order_id for update loop
+  update orders set status='Cancelled' where order_id=held.order_id;
+  perform private.restore_test_order(held.order_id);
  end loop;
  update registrations set status='Withdrawn' where not paid and status='Registered' and hold_expires_at<=now();
  update test_payments p set status=case when p.expires_at<=now() then 'Expired' else 'Cancelled' end
  where p.status in ('Pending','Processing') and (p.expires_at<=now()
- or (p.kind='Booking' and not exists(select 1 from bookings b where b.id=p.source_id and not b.paid and b.status='Reserved'))
- or (p.kind='Order' and not exists(select 1 from orders o where o.id=p.source_id and not o.paid and o.status='Pending'))
- or (p.kind='Event' and not exists(select 1 from registrations r where r.id=p.source_id and not r.paid and r.status='Registered')));
+ or (p.kind='Booking' and not exists(select 1 from bookings b where b.booking_id=p.source_id and not b.paid and b.status='Reserved'))
+ or (p.kind='Order' and not exists(select 1 from orders o where o.order_id=p.source_id and not o.paid and o.status='Pending'))
+ or (p.kind='Event' and not exists(select 1 from registrations r where r.registration_id=p.source_id and not r.paid and r.status='Registered')));
 end $$;
 
 -- Caller already owns the account lock; source locks precede payment locks.
@@ -1155,19 +1155,19 @@ declare amount int; deadline timestamptz; lines jsonb; spending int; deduction i
 begin
  if p_kind='Booking' then
   select b.total,coalesce(b.hold_expires_at,now()+interval '10 minutes'),jsonb_build_array(jsonb_build_object('name',r.name,'qty',b.guests,'detail',b.starts_at,'price',b.total))
-   into amount,deadline,lines from bookings b join resources r on r.id=b.resource_id
-   where b.id=p_id and b.user_id=p_uid and not b.paid and b.status='Reserved' and b.ends_at>now() for update of b;
-  update bookings set hold_expires_at=deadline where id=p_id and user_id=p_uid and hold_expires_at is null;
+   into amount,deadline,lines from bookings b join resources r on r.resource_id=b.resource_id
+   where b.booking_id=p_id and b.user_id=p_uid and not b.paid and b.status='Reserved' and b.ends_at>now() for update of b;
+  update bookings set hold_expires_at=deadline where booking_id=p_id and user_id=p_uid and hold_expires_at is null;
  elsif p_kind='Order' then
   select total,coalesce(hold_expires_at,now()+interval '10 minutes') into amount,deadline from orders
-   where id=p_id and user_id=p_uid and not paid and status='Pending' for update;
+   where order_id=p_id and user_id=p_uid and not paid and status='Pending' for update;
   select jsonb_agg(jsonb_build_object('name',name,'qty',qty,'price',price)) into lines from order_items where order_id=p_id;
-  update orders set hold_expires_at=deadline where id=p_id and user_id=p_uid and hold_expires_at is null;
+  update orders set hold_expires_at=deadline where order_id=p_id and user_id=p_uid and hold_expires_at is null;
  elsif p_kind='Event' then
   select r.fee,least(coalesce(r.hold_expires_at,now()+interval '10 minutes'),e.starts_at),jsonb_build_array(jsonb_build_object('name',e.name,'qty',1,'price',r.fee))
-   into amount,deadline,lines from registrations r join events e on e.id=r.event_id
-   where r.id=p_id and r.user_id=p_uid and not r.paid and r.status='Registered' and e.status='Open' and e.starts_at>now() for update of r,e;
-  update registrations set hold_expires_at=deadline where id=p_id and user_id=p_uid and hold_expires_at is null;
+   into amount,deadline,lines from registrations r join events e on e.event_id=r.event_id
+   where r.registration_id=p_id and r.user_id=p_uid and not r.paid and r.status='Registered' and e.status='Open' and e.starts_at>now() for update of r,e;
+  update registrations set hold_expires_at=deadline where registration_id=p_id and user_id=p_uid and hold_expires_at is null;
  else raise exception 'Choose Booking, Order or Event.'; end if;
  if amount is null or deadline<=now() then raise exception 'Already paid, cancelled or checkout hold expired.'; end if;
  select spent into spending from profiles where profile_id=p_uid;
@@ -1189,32 +1189,32 @@ begin
   if coalesce(p_data->>'method','') not in ('TNG','FPX','Card') then raise exception 'Choose a payment method.'; end if;
   if (p_data->>'expected_total')::int is distinct from (q->>'total')::int then raise exception 'Amount changed. Reload checkout.'; end if;
   select * into pay from test_payments where test_payments.kind=chosen_kind and source_id=sid and user_id=me.profile_id and status in ('Pending','Processing') for update;
-  if pay.id is null then
+  if pay.payment_id is null then
    insert into test_payments(user_id,kind,source_id,method,subtotal,discount,total,points,items,expires_at)
    values(me.profile_id,chosen_kind,sid,p_data->>'method',(q->>'subtotal')::int,(q->>'discount')::int,(q->>'total')::int,(q->>'points')::int,q->'items',(q->>'expires_at')::timestamptz) returning * into pay;
   end if;
  else
-  select * into pay from test_payments where id=(p_data->>'id')::uuid;
-  if pay.id is null or (pay.user_id<>me.profile_id and not(p_action='test_refund' and me.role in ('staff','admin'))) then raise exception 'Payment not found.'; end if;
+  select * into pay from test_payments where payment_id=(p_data->>'id')::uuid;
+  if pay.payment_id is null or (pay.user_id<>me.profile_id and not(p_action='test_refund' and me.role in ('staff','admin'))) then raise exception 'Payment not found.'; end if;
   select * into owner from profiles where profile_id=pay.user_id for update;
   -- Lock source first, including terminal rows, to serialize counter collection and refunds.
-  if pay.kind='Booking' then perform 1 from bookings where id=pay.source_id for update;
-  elsif pay.kind='Order' then perform 1 from orders where id=pay.source_id for update;
-  else perform 1 from registrations where id=pay.source_id for update;
-   perform 1 from events where id=(select event_id from registrations where id=pay.source_id) for update; end if;
-  select * into pay from test_payments where id=pay.id for update;
+  if pay.kind='Booking' then perform 1 from bookings where booking_id=pay.source_id for update;
+  elsif pay.kind='Order' then perform 1 from orders where order_id=pay.source_id for update;
+  else perform 1 from registrations where registration_id=pay.source_id for update;
+   perform 1 from events where event_id=(select event_id from registrations where registration_id=pay.source_id) for update; end if;
+  select * into pay from test_payments where payment_id=pay.payment_id for update;
   if p_action='test_refund' then
    if pay.status='Refunded' then return jsonb_build_object('payment',to_jsonb(pay),'message','Payment already refunded.'); end if;
    if pay.status<>'Succeeded' then raise exception 'Only completed payments can be refunded.'; end if;
-   if pay.kind='Booking' then update bookings set paid=false,status='Cancelled' where id=pay.source_id and paid and status='Confirmed' and starts_at>now() and not exists(select 1 from booking_extensions where booking_id=pay.source_id); allowed:=found;
-   elsif pay.kind='Order' then update orders set paid=false,status='Cancelled' where id=pay.source_id and paid and status='Pending'; allowed:=found;
+   if pay.kind='Booking' then update bookings set paid=false,status='Cancelled' where booking_id=pay.source_id and paid and status='Confirmed' and starts_at>now() and not exists(select 1 from booking_extensions where booking_id=pay.source_id); allowed:=found;
+   elsif pay.kind='Order' then update orders set paid=false,status='Cancelled' where order_id=pay.source_id and paid and status='Pending'; allowed:=found;
     if allowed then perform private.restore_test_order(pay.source_id); end if;
-   else update registrations set paid=false,status='Withdrawn' where id=pay.source_id and paid and status='Registered' and exists(select 1 from events where id=registrations.event_id and status='Open' and starts_at>now()); allowed:=found;
+   else update registrations set paid=false,status='Withdrawn' where registration_id=pay.source_id and paid and status='Registered' and exists(select 1 from events where event_id=registrations.event_id and status='Open' and starts_at>now()); allowed:=found;
    end if;
    if not allowed then raise exception 'This service has already started or been fulfilled. A refund is unavailable.'; end if;
    update profiles set test_points=test_points-pay.points,test_spent=test_spent-pay.total where profile_id=pay.user_id;
-   update bills set status='Void',void_reason='Payment refunded.' where id=pay.bill_id and environment='test';
-   update test_payments set status='Refunded',settled_at=now() where id=pay.id returning * into pay;
+   update bills set status='Void',void_reason='Payment refunded.' where bill_id=pay.bill_id and environment='test';
+   update test_payments set status='Refunded',settled_at=now() where payment_id=pay.payment_id returning * into pay;
   elsif p_action='test_resolve' then
    outcome:=p_data->>'outcome';
    if coalesce(outcome,'') not in ('Success','Failure','Pending','Cancel') then raise exception 'Invalid payment status.'; end if;
@@ -1224,18 +1224,18 @@ begin
     if outcome='Success' then
      if (q->>'subtotal')::int<>pay.subtotal then raise exception 'Amount changed. Cancel and restart checkout.'; end if;
      insert into bills(user_id,kind,source_id,subtotal,discount,total,points,method,environment,payment_reference)
-      values(pay.user_id,pay.kind,pay.source_id,pay.subtotal,pay.discount,pay.total,pay.points,pay.method,'test',pay.reference) returning id into bid;
+      values(pay.user_id,pay.kind,pay.source_id,pay.subtotal,pay.discount,pay.total,pay.points,pay.method,'test',pay.reference) returning bill_id into bid;
      update profiles set test_points=test_points+pay.points,test_spent=test_spent+pay.total where profile_id=pay.user_id;
-     if pay.kind='Booking' then update bookings set paid=true,status='Confirmed' where id=pay.source_id;
-     elsif pay.kind='Order' then update orders set paid=true where id=pay.source_id;
-     else update registrations set paid=true where id=pay.source_id; end if;
-     update test_payments set status='Succeeded',bill_id=bid,settled_at=now() where id=pay.id returning * into pay;
-    else update test_payments set status=case outcome when 'Failure' then 'Failed' when 'Cancel' then 'Cancelled' else 'Processing' end where id=pay.id returning * into pay;
+     if pay.kind='Booking' then update bookings set paid=true,status='Confirmed' where booking_id=pay.source_id;
+     elsif pay.kind='Order' then update orders set paid=true where order_id=pay.source_id;
+     else update registrations set paid=true where registration_id=pay.source_id; end if;
+     update test_payments set status='Succeeded',bill_id=bid,settled_at=now() where payment_id=pay.payment_id returning * into pay;
+    else update test_payments set status=case outcome when 'Failure' then 'Failed' when 'Cancel' then 'Cancelled' else 'Processing' end where payment_id=pay.payment_id returning * into pay;
     end if;
    end if;
   else raise exception 'Unknown payment action.'; end if;
  end if;
- return jsonb_build_object('payment',to_jsonb(pay),'message','No money was charged.','receipt',(select to_jsonb(b) from bills b where b.id=pay.bill_id));
+ return jsonb_build_object('payment',to_jsonb(pay),'message','No money was charged.','receipt',(select to_jsonb(b) from bills b where b.bill_id=pay.bill_id));
 end $$;
 revoke all on all functions in schema private from public,anon,authenticated;
 
@@ -1251,12 +1251,12 @@ do $$ declare definition text; begin
  definition:=replace(definition,'select * into target from profiles where profile_id=invoice.user_id for update;', 'if invoice.environment=''test'' then raise exception ''Open payment details to request a refund.''; end if; select * into target from profiles where profile_id=invoice.user_id for update;');
  -- Re-registration receives a fresh hold; event result supplies its source ID.
  definition:=replace(definition,'fee=excluded.fee where registrations.status=''Withdrawn''','fee=excluded.fee,hold_expires_at=now()+interval ''10 minutes'' where registrations.status=''Withdrawn''');
- definition:=replace(definition,'if not found then raise exception ''You are already registered.''; end if;', 'if not found then raise exception ''You are already registered.''; end if; select id into oid from registrations where event_id=ev.id and user_id=me.profile_id; result:=jsonb_build_object(''id'',oid,''message'',''Registered. Complete checkout.'');');
+ definition:=replace(definition,'if not found then raise exception ''You are already registered.''; end if;', 'if not found then raise exception ''You are already registered.''; end if; select registration_id into oid from registrations where event_id=ev.event_id and user_id=me.profile_id; result:=jsonb_build_object(''id'',oid,''message'',''Registered. Complete checkout.'');');
  execute definition;
  definition:=pg_get_functiondef('public.ctfly_snapshot()'::regprocedure);
  definition:=replace(definition,'return result;', $patch$
  result:=result||jsonb_build_object('payment_mode','simulation','test_payments',coalesce((select jsonb_agg(x order by x.created_at desc) from
- (select t.*,p.name as customer_name,(select to_jsonb(b) from bills b where b.id=t.bill_id) as receipt from test_payments t join profiles p on p.profile_id=t.user_id where t.user_id=me.profile_id or crew order by t.created_at desc limit 300) x),'[]'::jsonb));
+ (select t.*,p.name as customer_name,(select to_jsonb(b) from bills b where b.bill_id=t.bill_id) as receipt from test_payments t join profiles p on p.profile_id=t.user_id where t.user_id=me.profile_id or crew order by t.created_at desc limit 300) x),'[]'::jsonb));
  return result;$patch$);
  execute definition;
 end $$;
@@ -1309,8 +1309,8 @@ begin
   if day<(now() at time zone 'Asia/Kuala_Lumpur')::date then raise exception 'Reservation date is in the past. Choose today or a future date.'; end if;
   if day>(now() at time zone 'Asia/Kuala_Lumpur')::date+90 then raise exception 'Reservation date must be within the next 90 days.'; end if;
   if st<now()-interval '1 minute' then raise exception 'Start time has already passed. Choose the current time or a later time.'; end if;
-  select * into r from resources where id=(d->>'resource_id')::bigint for update;
-  if r.id is null or r.status<>'Available' then raise exception 'Selected space is unavailable. Refresh and choose another space.'; end if;
+  select * into r from resources where resource_id=(d->>'resource_id')::bigint for update;
+  if r.resource_id is null or r.status<>'Available' then raise exception 'Selected space is unavailable. Refresh and choose another space.'; end if;
   if (d->>'guests')::int>r.capacity then raise exception 'Players / group size exceeds this space capacity of %.',r.capacity; end if;
   if (r.kind='GoKart' and (d->>'minutes')::int not in (30,60)) or (r.kind='Arcade' and (d->>'minutes')::int not in (30,60,90,120)) or (r.kind not in ('GoKart','Arcade') and (d->>'minutes')::int not in (30,60,90,120,180)) then raise exception 'Duration is unavailable for this activity. Choose one of the listed durations (minimum 30 minutes).'; end if;
  elsif a='save_resource' then
@@ -1355,23 +1355,23 @@ begin
  foreach k in array array['prize_first','prize_second','prize_third','prize_consolation'] loop
   if coalesce(length(btrim(d->>k)),16) not between 1 and 800 then raise exception '%: enter a prize or explicitly write No prize (maximum 800 characters).',replace(k,'_',' '); end if;
  end loop;
- if nullif(d->>'id','') is not null then
-  select * into old from events where id=(d->>'id')::bigint for update;
-  if old.id is null then raise exception 'Competition no longer exists. Refresh the list.'; end if;
+ if nullif(coalesce(d->>'event_id',d->>'id'),'') is not null then
+  select * into old from events where event_id=nullif(coalesce(d->>'event_id',d->>'id'),'')::bigint for update;
+  if old.event_id is null then raise exception 'Competition no longer exists. Refresh the list.'; end if;
   if old.status in ('Running','Completed') then raise exception 'Competition has already started or completed. Its booking details cannot be edited.'; end if;
-  if exists(select 1 from registrations where event_id=old.id and status='Registered' and paid) and (state='Cancelled' or st<>old.starts_at or en<>old.ends_at or fee_value<>old.fee or cap<>old.capacity or d->>'game'<>old.game) then raise exception 'Paid entries exist. Handle refunds before changing the competition date, time, fee, game or capacity.'; end if;
-  if cap<(select count(*) from registrations where event_id=old.id and status='Registered') then raise exception 'Team slots cannot be fewer than existing registrations.'; end if;
+  if exists(select 1 from registrations where event_id=old.event_id and status='Registered' and paid) and (state='Cancelled' or st<>old.starts_at or en<>old.ends_at or fee_value<>old.fee or cap<>old.capacity or d->>'game'<>old.game) then raise exception 'Paid entries exist. Handle refunds before changing the competition date, time, fee, game or capacity.'; end if;
+  if cap<(select count(*) from registrations where event_id=old.event_id and status='Registered') then raise exception 'Team slots cannot be fewer than existing registrations.'; end if;
   update events set name=btrim(d->>'name'),game=btrim(d->>'game'),starts_at=st,ends_at=en,registration_closes_at=close_at,fee=fee_value,capacity=cap,status=state,description=coalesce(d->>'description',''),poster_url=poster,
-    prize_first=coalesce(d->>'prize_first',old.prize_first),prize_second=coalesce(d->>'prize_second',old.prize_second),prize_third=coalesce(d->>'prize_third',old.prize_third),prize_consolation=coalesce(d->>'prize_consolation',old.prize_consolation) where id=old.id returning id into eid;
+    prize_first=coalesce(d->>'prize_first',old.prize_first),prize_second=coalesce(d->>'prize_second',old.prize_second),prize_third=coalesce(d->>'prize_third',old.prize_third),prize_consolation=coalesce(d->>'prize_consolation',old.prize_consolation) where event_id=old.event_id returning event_id into eid;
  else
   insert into events(name,game,starts_at,ends_at,registration_closes_at,fee,capacity,status,description,poster_url,prize_first,prize_second,prize_third,prize_consolation,created_by)
-  values(btrim(d->>'name'),btrim(d->>'game'),st,en,close_at,fee_value,cap,state,coalesce(d->>'description',''),poster,coalesce(d->>'prize_first','To be announced'),coalesce(d->>'prize_second','To be announced'),coalesce(d->>'prize_third','To be announced'),coalesce(d->>'prize_consolation','No consolation prize'),me.profile_id) returning id into eid;
+  values(btrim(d->>'name'),btrim(d->>'game'),st,en,close_at,fee_value,cap,state,coalesce(d->>'description',''),poster,coalesce(d->>'prize_first','To be announced'),coalesce(d->>'prize_second','To be announced'),coalesce(d->>'prize_third','To be announced'),coalesce(d->>'prize_consolation','No consolation prize'),me.profile_id) returning event_id into eid;
  end if;
  return jsonb_build_object('id',eid,'message',case when state='Draft' then 'Competition saved as draft.' else 'Competition updated.' end);
 end $$;
 
 create table public.promotions (
- id uuid primary key default gen_random_uuid(), code text unique not null check(code~'^[A-Z0-9-]{3,24}$'), title text not null check(length(title) between 3 and 120),
+ promotion_id uuid primary key default gen_random_uuid(), code text unique not null check(code~'^[A-Z0-9-]{3,24}$'), title text not null check(length(title) between 3 and 120),
  scope text not null check(scope in ('All','Booking','Order','Event')), benefit text not null check(benefit in ('Percentage','Fixed','Free')),
  amount int not null check(amount>=0), resource_kind text not null default 'All', max_minutes int not null default 0 check(max_minutes between 0 and 180),
  starts_at timestamptz not null, ends_at timestamptz not null check(ends_at>starts_at), usage_limit int not null check(usage_limit between 1 and 1000000),
@@ -1379,11 +1379,11 @@ create table public.promotions (
  target_user uuid references public."User"(user_id), created_by uuid not null references public.staff(staff_id), created_at timestamptz not null default now());
 create index promotions_target_idx on public.promotions(target_user);create index promotions_creator_idx on public.promotions(created_by);
 alter table public.promotions enable row level security;revoke all on public.promotions from public,anon,authenticated;
-alter table public.test_payments add column promotion_id uuid references public.promotions;
+alter table public.test_payments add column promotion_id uuid references public.promotions(promotion_id);
 alter table public.test_payments add column promo_code text;
 create index test_payments_promotion_idx on public.test_payments(promotion_id);
 create table public.promo_claims (
- payment_id uuid primary key references public.test_payments, promotion_id uuid not null references public.promotions,user_id uuid not null references public."User"(user_id),
+ payment_id uuid primary key references public.test_payments(payment_id), promotion_id uuid not null references public.promotions(promotion_id),user_id uuid not null references public."User"(user_id),
  status text not null check(status in ('Held','Redeemed','Released')),expires_at timestamptz not null,created_at timestamptz not null default now());
 create index promo_claims_promo_status_idx on public.promo_claims(promotion_id,status);
 create index promo_claims_user_idx on public.promo_claims(user_id,promotion_id,status);
@@ -1407,12 +1407,12 @@ begin
  if begin_at is null or finish_at is null or finish_at<=begin_at or finish_at<=now() then raise exception 'Promo expiry date / time must be in the future and later than its start.'; end if;
  target:=nullif(d->>'target_user','')::uuid;
  if target is not null and not exists(select 1 from profiles where profile_id=target and active and role='customer') then raise exception 'Selected customer is unavailable. Refresh the customer list.'; end if;
- if nullif(d->>'id','') is not null then
-  select * into promo from promotions where id=(d->>'id')::uuid for update;if promo.id is null then raise exception 'Promo code no longer exists.';end if;
-  if exists(select 1 from promo_claims where promotion_id=promo.id and status in ('Held','Redeemed')) and (code_value<>promo.code or benefit_type<>promo.benefit or amt<>promo.amount or d->>'scope'<>promo.scope or target is distinct from promo.target_user or lim<promo.usage_limit or peruser<promo.per_user_limit or coalesce(d->>'resource_kind','All')<>promo.resource_kind or maxmins<>promo.max_minutes or begin_at<>promo.starts_at or finish_at<>promo.ends_at) then raise exception 'This code has payment claims. Keep its benefit, customer and limits, or create another code.';end if;
-  update promotions set title=btrim(d->>'title'),code=code_value,scope=d->>'scope',benefit=benefit_type,amount=amt,resource_kind=coalesce(d->>'resource_kind','All'),max_minutes=maxmins,starts_at=begin_at,ends_at=finish_at,usage_limit=lim,per_user_limit=peruser,target_user=target,active=coalesce((d->>'active')::boolean,true) where id=promo.id returning id into result_id;
+ if nullif(coalesce(d->>'promotion_id',d->>'id'),'') is not null then
+  select * into promo from promotions where promotion_id=nullif(coalesce(d->>'promotion_id',d->>'id'),'')::uuid for update;if promo.promotion_id is null then raise exception 'Promo code no longer exists.';end if;
+  if exists(select 1 from promo_claims where promotion_id=promo.promotion_id and status in ('Held','Redeemed')) and (code_value<>promo.code or benefit_type<>promo.benefit or amt<>promo.amount or d->>'scope'<>promo.scope or target is distinct from promo.target_user or lim<promo.usage_limit or peruser<promo.per_user_limit or coalesce(d->>'resource_kind','All')<>promo.resource_kind or maxmins<>promo.max_minutes or begin_at<>promo.starts_at or finish_at<>promo.ends_at) then raise exception 'This code has payment claims. Keep its benefit, customer and limits, or create another code.';end if;
+  update promotions set title=btrim(d->>'title'),code=code_value,scope=d->>'scope',benefit=benefit_type,amount=amt,resource_kind=coalesce(d->>'resource_kind','All'),max_minutes=maxmins,starts_at=begin_at,ends_at=finish_at,usage_limit=lim,per_user_limit=peruser,target_user=target,active=coalesce((d->>'active')::boolean,true) where promotion_id=promo.promotion_id returning promotion_id into result_id;
  else insert into promotions(code,title,scope,benefit,amount,resource_kind,max_minutes,starts_at,ends_at,usage_limit,per_user_limit,target_user,created_by)
- values(code_value,btrim(d->>'title'),d->>'scope',benefit_type,amt,coalesce(d->>'resource_kind','All'),maxmins,begin_at,finish_at,lim,peruser,target,me.profile_id) returning id into result_id;end if;
+ values(code_value,btrim(d->>'title'),d->>'scope',benefit_type,amt,coalesce(d->>'resource_kind','All'),maxmins,begin_at,finish_at,lim,peruser,target,me.profile_id) returning promotion_id into result_id;end if;
  return jsonb_build_object('id',result_id,'message','Promo code saved.');
 end $$;
 
@@ -1422,30 +1422,30 @@ declare promo promotions; deduction int; held_count int; customer_count int;
 begin
  if coalesce(btrim(code_value),'')='' then return q;end if;
  select * into promo from promotions where code=upper(btrim(code_value)) for update;
- if promo.id is null then raise exception 'Promo code does not exist. Check the code.';end if;
+ if promo.promotion_id is null then raise exception 'Promo code does not exist. Check the code.';end if;
  if not promo.active then raise exception 'Promo code has been disabled.';end if;
  if promo.starts_at>now() then raise exception 'Promo code is not active yet. Check its starting date / time.';end if;
  if promo.ends_at<=now() then raise exception 'Promo code has expired.';end if;
  if promo.target_user is not null and promo.target_user<>uid then raise exception 'Promo code is assigned to another customer.';end if;
  if promo.scope not in ('All',q->>'kind') then raise exception 'Promo code does not apply to this booking or order type.';end if;
  if q->>'kind'='Booking' and ((promo.resource_kind<>'All' and promo.resource_kind<>q->'items'->0->>'resource_kind') or (promo.max_minutes>0 and (q->'items'->0->>'duration_minutes')::int>promo.max_minutes)) then raise exception 'Promo code does not apply to this activity or session duration.';end if;
- select count(*),count(*) filter(where c.user_id=uid) into held_count,customer_count from promo_claims c join test_payments t on t.id=c.payment_id where c.promotion_id=promo.id and c.status in ('Held','Redeemed') and (c.status='Redeemed' or c.expires_at>now()) and not(t.source_id=(q->>'source_id')::uuid and t.kind=q->>'kind' and t.status in ('Pending','Processing'));
+ select count(*),count(*) filter(where c.user_id=uid) into held_count,customer_count from promo_claims c join test_payments t on t.payment_id=c.payment_id where c.promotion_id=promo.promotion_id and c.status in ('Held','Redeemed') and (c.status='Redeemed' or c.expires_at>now()) and not(t.source_id=(q->>'source_id')::uuid and t.kind=q->>'kind' and t.status in ('Pending','Processing'));
  if held_count>=promo.usage_limit then raise exception 'Promo code has reached its total usage limit.';end if;
  if customer_count>=promo.per_user_limit then raise exception 'You have already used this promo code as many times as allowed.';end if;
  deduction:=least((q->>'subtotal')::int,case promo.benefit when 'Free' then (q->>'subtotal')::int when 'Fixed' then promo.amount else (q->>'subtotal')::int*promo.amount/100 end);
  if deduction<(q->>'discount')::int then raise exception 'Your member discount is better than this promo code. Remove the code to keep your member price.';end if;
- return q||jsonb_build_object('promotion_id',promo.id,'promo_code',promo.code,'discount',deduction,'total',(q->>'subtotal')::int-deduction,'points',((q->>'subtotal')::int-deduction)/100,'expires_at',least((q->>'expires_at')::timestamptz,promo.ends_at));
+ return q||jsonb_build_object('promotion_id',promo.promotion_id,'promo_code',promo.code,'discount',deduction,'total',(q->>'subtotal')::int-deduction,'points',((q->>'subtotal')::int-deduction)/100,'expires_at',least((q->>'expires_at')::timestamptz,promo.ends_at));
 end $$;
 
 create function private.sync_promo_claim() returns trigger
 language plpgsql set search_path=public, extensions, pg_temp as $$
 begin
  if new.promotion_id is not null and new.status is distinct from old.status then
-  perform 1 from promotions where id=new.promotion_id for update;
+  perform 1 from promotions where promotion_id=new.promotion_id for update;
   if new.status='Succeeded' then
-   update promo_claims set status='Redeemed' where payment_id=new.id and status='Held' and expires_at>now();
+   update promo_claims set status='Redeemed' where payment_id=new.payment_id and status='Held' and expires_at>now();
    if not found then raise exception 'Promo reservation expired. Restart checkout.';end if;
-  elsif new.status in ('Failed','Cancelled','Expired','Refunded') then update promo_claims set status='Released' where payment_id=new.id;end if;
+  elsif new.status in ('Failed','Cancelled','Expired','Refunded') then update promo_claims set status='Released' where payment_id=new.payment_id;end if;
  end if;
  return new;
 end $$;
@@ -1459,15 +1459,15 @@ declare d jsonb; session public.bookings; ext public.booking_extensions; ending 
 begin
  d:=jsonb_build_object('customer_name',(select name from profiles where profile_id=b.user_id),'currency','MYR');
  if b.kind in ('Booking','Extension') then
-  if b.kind='Extension' then select * into ext from booking_extensions where id=b.source_id;select * into session from bookings where id=ext.booking_id;
-  else select * into session from bookings where id=b.source_id;end if;
+  if b.kind='Extension' then select * into ext from booking_extensions where booking_extension_id=b.source_id;select * into session from bookings where booking_id=ext.booking_id;
+  else select * into session from bookings where booking_id=b.source_id;end if;
   ending:=session.ends_at;
-  if b.kind='Booking' then ending:=ending-make_interval(mins=>coalesce((select sum(minutes)::int from booking_extensions where booking_id=session.id),0));end if;
-  d:=d||coalesce((select jsonb_build_object('activity',r.kind,'resource',r.name,'zone',r.zone,'starts_at',case when b.kind='Extension' then ending-make_interval(mins=>ext.minutes) else session.starts_at end,'ends_at',ending,'duration_minutes',case when b.kind='Extension' then ext.minutes else extract(epoch from ending-session.starts_at)::int/60 end,'players',session.guests,'hourly_rate',r.rate,'booking_id',session.id,'items',jsonb_build_array(jsonb_build_object('name',r.name,'qty',1,'price',b.subtotal))) from resources r where r.id=session.resource_id),'{}'::jsonb);
+  if b.kind='Booking' then ending:=ending-make_interval(mins=>coalesce((select sum(minutes)::int from booking_extensions where booking_id=session.booking_id),0));end if;
+  d:=d||coalesce((select jsonb_build_object('activity',r.kind,'resource',r.name,'zone',r.zone,'starts_at',case when b.kind='Extension' then ending-make_interval(mins=>ext.minutes) else session.starts_at end,'ends_at',ending,'duration_minutes',case when b.kind='Extension' then ext.minutes else extract(epoch from ending-session.starts_at)::int/60 end,'players',session.guests,'hourly_rate',r.rate,'booking_id',session.booking_id,'items',jsonb_build_array(jsonb_build_object('name',r.name,'qty',1,'price',b.subtotal))) from resources r where r.resource_id=session.resource_id),'{}'::jsonb);
  elsif b.kind='Order' then
-  d:=d||jsonb_build_object('activity','Café order','items',coalesce((select jsonb_agg(jsonb_build_object('name',name,'qty',qty,'price',price,'line_total',qty*price) order by id) from order_items where order_id=b.source_id),'[]'::jsonb));
+  d:=d||jsonb_build_object('activity','Café order','items',coalesce((select jsonb_agg(jsonb_build_object('name',name,'qty',qty,'price',price,'line_total',qty*price) order by order_item_id) from order_items where order_id=b.source_id),'[]'::jsonb));
  elsif b.kind='Event' then
-  d:=d||coalesce((select jsonb_build_object('activity','Competition','resource',e.name,'game',e.game,'team',g.team,'starts_at',e.starts_at,'ends_at',e.ends_at,'duration_minutes',extract(epoch from e.ends_at-e.starts_at)::int/60,'items',jsonb_build_array(jsonb_build_object('name',e.name,'qty',1,'price',b.subtotal))) from registrations g join events e on e.id=g.event_id where g.id=b.source_id),'{}'::jsonb);
+  d:=d||coalesce((select jsonb_build_object('activity','Competition','resource',e.name,'game',e.game,'team',g.team,'starts_at',e.starts_at,'ends_at',e.ends_at,'duration_minutes',extract(epoch from e.ends_at-e.starts_at)::int/60,'items',jsonb_build_array(jsonb_build_object('name',e.name,'qty',1,'price',b.subtotal))) from registrations g join events e on e.event_id=g.event_id where g.registration_id=b.source_id),'{}'::jsonb);
  end if;
  if b.payment_reference is not null then d:=d||jsonb_build_object('promo_code',(select promo_code from test_payments where reference=b.payment_reference));end if;
  return d;
@@ -1478,7 +1478,7 @@ begin new.details:=private.bill_details(new);return new;end $$;
 create trigger freeze_receipt before insert on public.bills for each row execute function private.freeze_receipt();
 
 create table public.receipt_email_jobs (
- bill_id uuid primary key references public.bills,user_id uuid not null references public."User"(user_id),
+ bill_id uuid primary key references public.bills(bill_id),user_id uuid not null references public."User"(user_id),
  status text not null default 'Queued' check(status in ('Queued','Sending','Sent','NotConfigured','Failed','Unknown')),
  attempts int not null default 0,last_attempt timestamptz,last_error text not null default '',provider_id text,sent_at timestamptz,created_at timestamptz not null default now());
 create index receipt_mail_user_idx on public.receipt_email_jobs(user_id,created_at desc);
@@ -1488,16 +1488,16 @@ create table private.mail_runtime(id boolean primary key default true check(id),
 alter table private.mail_runtime enable row level security;revoke all on private.mail_runtime from public,anon,authenticated;
 insert into private.mail_runtime(worker_secret) values(replace(gen_random_uuid()::text||gen_random_uuid()::text,'-',''));
 create function private.queue_receipt() returns trigger language plpgsql set search_path=public, extensions, pg_temp as $$
-begin insert into receipt_email_jobs(bill_id,user_id) values(new.id,new.user_id) on conflict do nothing;return new;end $$;
+begin insert into receipt_email_jobs(bill_id,user_id) values(new.bill_id,new.user_id) on conflict do nothing;return new;end $$;
 create trigger queue_receipt after insert on public.bills for each row execute function private.queue_receipt();
 create function private.receipt_action(a text,d jsonb) returns jsonb language plpgsql set search_path=public, extensions, pg_temp as $$
 declare b bills;begin
- select * into b from bills where id=(d->>'id')::uuid and exists(select 1 from profiles where profile_id=public.ctfly_uid() and active and (profile_id=bills.user_id or role in ('staff','admin')));
- if b.id is null then raise exception 'Receipt not found for this account.';end if;
+ select * into b from bills where bill_id=(d->>'id')::uuid and exists(select 1 from profiles where profile_id=public.ctfly_uid() and active and (profile_id=bills.user_id or role in ('staff','admin')));
+ if b.bill_id is null then raise exception 'Receipt not found for this account.';end if;
  if a='receipt_email' then
-  insert into receipt_email_jobs(bill_id,user_id) values(b.id,b.user_id) on conflict(bill_id) do update set status='Queued',last_error='' where receipt_email_jobs.status in ('NotConfigured','Failed');
+  insert into receipt_email_jobs(bill_id,user_id) values(b.bill_id,b.user_id) on conflict(bill_id) do update set status='Queued',last_error='' where receipt_email_jobs.status in ('NotConfigured','Failed');
  end if;
- return jsonb_build_object('receipt',to_jsonb(b),'email',(select to_jsonb(j)-'user_id' from receipt_email_jobs j where bill_id=b.id),'message',case when a='receipt_email' then 'Receipt queued for your registered email. Delivery needs a configured mail service.' else 'Receipt ready.' end);
+ return jsonb_build_object('receipt',to_jsonb(b),'email',(select to_jsonb(j)-'user_id' from receipt_email_jobs j where bill_id=b.bill_id),'message',case when a='receipt_email' then 'Receipt queued for your registered email. Delivery needs a configured mail service.' else 'Receipt ready.' end);
 end $$;
 -- Only the server's service role can invoke the worker. The additional private secret authenticates cron dispatch.
 create or replace function private.receipt_worker(secret_value text,operation text,d jsonb) returns jsonb
@@ -1514,7 +1514,7 @@ declare jobs jsonb;state text;begin
   update receipt_email_jobs set status='Unknown',last_error='Sending was interrupted. Verify delivery before retrying.' where status='Sending' and last_attempt<now()-interval '5 minutes';
   -- Leave other receipts queued until a worker is ready to send them.
   with chosen as(select bill_id from receipt_email_jobs where status='Queued' order by created_at,bill_id for update skip locked limit 1),claimed as(update receipt_email_jobs j set status='Sending',attempts=attempts+1,last_attempt=now() from chosen where j.bill_id=chosen.bill_id returning j.*)
-  select coalesce(jsonb_agg(jsonb_build_object('bill',to_jsonb(b),'email',u.email)),'[]'::jsonb) into jobs from claimed j join bills b on b.id=j.bill_id join public."User" u on u.user_id=j.user_id;
+  select coalesce(jsonb_agg(jsonb_build_object('bill',to_jsonb(b),'email',u.email)),'[]'::jsonb) into jobs from claimed j join bills b on b.bill_id=j.bill_id join public."User" u on u.user_id=j.user_id;
   return jobs;
  elsif operation='result' then
   state:=d->>'status';if state not in ('Sent','Failed','Unknown') then raise exception 'Invalid worker result.';end if;
@@ -1532,9 +1532,9 @@ do $$ declare def text;begin
  def:=pg_get_functiondef('public.ctfly_action(text,jsonb,uuid)'::regprocedure);
  def:=replace(def,'perform expire_bookings();','perform private.validate_club_input(p_action,p_data); perform expire_bookings();');
  def:=replace(def,'if p_action in (''test_quote''', 'if p_action=''save_event'' then result:=private.save_club_event(p_data); elsif p_action=''save_promotion'' then result:=private.save_promotion(p_data); elsif p_action in (''receipt_detail'',''receipt_email'') then result:=private.receipt_action(p_action,p_data); elsif p_action in (''test_quote''');
- def:=regexp_replace(def,'if r.id is null or r.status<>''Available''.*?Choose an available space, valid time and group size[.]''; end if;', 'if n<30 then raise exception ''Duration: minimum 30 minutes.'';end if;','s');
+ def:=regexp_replace(def,'if r.resource_id is null or r.status<>''Available''.*?Choose an available space, valid time and group size[.]''; end if;', 'if n<30 then raise exception ''Duration: minimum 30 minutes.'';end if;','s');
  def:=replace(def,'(r.rate*n+30)/60','((r.rate::bigint*n+30)/60)::int');
- def:=replace(def,'select * into ev from events where id=(p_data->>''event_id'')::bigint for update;', 'select * into ev from events where id=(p_data->>''event_id'')::bigint for update; if p_action=''register_event'' and coalesce(ev.registration_closes_at,ev.starts_at)<=now() then raise exception ''Registration closing date / time has passed.'';end if;');
+ def:=replace(def,'select * into ev from events where event_id=(p_data->>''event_id'')::bigint for update;', 'select * into ev from events where event_id=(p_data->>''event_id'')::bigint for update; if p_action=''register_event'' and coalesce(ev.registration_closes_at,ev.starts_at)<=now() then raise exception ''Registration closing date / time has passed.'';end if;');
  def:=replace(def,'exception when exclusion_violation', $patch$exception when unique_violation then raise exception '%: this name or code is already in use. Choose another.',case p_action when 'save_promotion' then 'Promo code' when 'save_resource' then 'Space name' when 'save_category' then 'Category name' else 'Selected entry' end; when invalid_text_representation then raise exception 'Selection: an item or number is invalid. Refresh and choose a listed option.'; when datetime_field_overflow or invalid_datetime_format then raise exception 'Date / time: choose a valid date, hour and minute.'; when foreign_key_violation then raise exception 'Selection: this item is no longer available. Refresh and select it again.'; when check_violation then raise exception 'Input range: one of the supplied values is outside its allowed range. Check the field limits.'; when exclusion_violation$patch$);
  def:=replace(def,'raise exception ''That time overlaps an existing booking, event or shift. Choose another time.'';', 'raise exception ''%: this time overlaps an existing %. Choose another start time.'',case p_action when ''book'' then ''Start time'' when ''save_event'' then ''Competition time'' else ''Shift time'' end,case p_action when ''book'' then ''reservation for this space'' when ''save_event'' then ''competition'' else ''shift for this staff member'' end;');
  execute def;
@@ -1542,21 +1542,21 @@ do $$ declare def text;begin
  def:=pg_get_functiondef('public.ctfly_snapshot()'::regprocedure);
  def:=replace(def,'return result;', $patch$
  result:=result||jsonb_build_object('receipt_emails',coalesce((select jsonb_agg(to_jsonb(j)-'user_id' order by created_at desc) from receipt_email_jobs j where j.user_id=me.profile_id or crew),'[]'::jsonb));
- if crew then result:=result||jsonb_build_object('events',coalesce((select jsonb_agg(e order by starts_at desc) from events e),'[]'::jsonb),'promotions',coalesce((select jsonb_agg(to_jsonb(p)||jsonb_build_object('used',(select count(*) from promo_claims c where c.promotion_id=p.id and c.status='Redeemed'))) from promotions p),'[]'::jsonb));end if;
+ if crew then result:=result||jsonb_build_object('events',coalesce((select jsonb_agg(e order by starts_at desc) from events e),'[]'::jsonb),'promotions',coalesce((select jsonb_agg(to_jsonb(p)||jsonb_build_object('used',(select count(*) from promo_claims c where c.promotion_id=p.promotion_id and c.status='Redeemed'))) from promotions p),'[]'::jsonb));end if;
  return result;$patch$);execute def;
  def:=pg_get_functiondef('private.test_quote(text,uuid,uuid)'::regprocedure);
  def:=replace(def,'''detail'',b.starts_at,''price'',b.total','''detail'',b.starts_at,''resource_kind'',r.kind,''zone'',r.zone,''starts_at'',b.starts_at,''ends_at'',b.ends_at,''duration_minutes'',extract(epoch from b.ends_at-b.starts_at)::int/60,''price'',b.total');execute def;
  def:=pg_get_functiondef('private.test_payment_action(text,jsonb)'::regprocedure);
  def:=replace(def,'q:=private.test_quote(chosen_kind,sid,me.profile_id);', $patch$
  if p_action='test_checkout' then select * into pay from test_payments where kind=chosen_kind and source_id=sid and user_id=me.profile_id and status in ('Pending','Processing');
- if pay.id is not null then return jsonb_build_object('payment',to_jsonb(pay),'message','Existing checkout resumed.');end if;end if;
+ if pay.payment_id is not null then return jsonb_build_object('payment',to_jsonb(pay),'message','Existing checkout resumed.');end if;end if;
  q:=private.apply_promotion(p_data->>'promo_code',private.test_quote(chosen_kind,sid,me.profile_id),me.profile_id);$patch$);
  def:=replace(def, '(q->>''expires_at'')::timestamptz) returning * into pay;', $patch$(q->>'expires_at')::timestamptz) returning * into pay;
   if q->>'promotion_id' is not null then
-   update test_payments set promotion_id=(q->>'promotion_id')::uuid,promo_code=q->>'promo_code' where id=pay.id returning * into pay;
-   insert into promo_claims(payment_id,promotion_id,user_id,status,expires_at) values(pay.id,pay.promotion_id,me.profile_id,'Held',pay.expires_at);
+   update test_payments set promotion_id=(q->>'promotion_id')::uuid,promo_code=q->>'promo_code' where payment_id=pay.payment_id returning * into pay;
+   insert into promo_claims(payment_id,promotion_id,user_id,status,expires_at) values(pay.payment_id,pay.promotion_id,me.profile_id,'Held',pay.expires_at);
   end if;$patch$);
- def:=replace(def,'select * into pay from test_payments where id=pay.id for update;','if pay.promotion_id is not null then perform 1 from promotions where id=pay.promotion_id for update;end if; select * into pay from test_payments where id=pay.id for update;');execute def;
+ def:=replace(def,'select * into pay from test_payments where payment_id=pay.payment_id for update;','if pay.promotion_id is not null then perform 1 from promotions where promotion_id=pay.promotion_id for update;end if; select * into pay from test_payments where payment_id=pay.payment_id for update;');execute def;
 end $$;
 revoke all on all functions in schema private from public,anon,authenticated;
 do $$ begin if exists(select 1 from pg_roles where rolname='service_role') then
@@ -1636,8 +1636,8 @@ create index if not exists orders_received_by_idx on public.orders(received_by) 
 update public.orders set pickup_token=gen_random_uuid(),ready_at=coalesce(ready_at,now()) where status='Ready' and paid and pickup_token is null;
 
 create table if not exists public.order_notifications (
- id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
- order_id uuid not null unique references public.orders, created_at timestamptz not null default now(),read_at timestamptz
+ notice_id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
+ order_id uuid not null unique references public.orders(order_id), created_at timestamptz not null default now(),read_at timestamptz
 );
 create index if not exists order_notifications_user_idx on public.order_notifications(user_id,created_at desc);
 alter table public.order_notifications enable row level security;
@@ -1653,7 +1653,7 @@ alter table private.user_push_devices enable row level security;
 revoke all on private.user_push_devices from public,anon,authenticated;
 
 create table if not exists private.order_push_jobs (
- id uuid primary key default gen_random_uuid(), notice_id uuid not null references public.order_notifications,
+ order_push_job_id uuid primary key default gen_random_uuid(), notice_id uuid not null references public.order_notifications(notice_id),
  installation_id uuid not null references private.user_push_devices on delete cascade,
  user_id uuid not null references public."User"(user_id), status text not null default 'Queued' check(status in ('Queued','Sending','Sent','Failed','Skipped')),
  attempts int not null default 0, next_attempt timestamptz not null default now(),last_attempt timestamptz,
@@ -1677,15 +1677,15 @@ begin
   if coalesce(d->>'token','') !~ '^ctfly-pickup:[0-9a-fA-F-]{36}$' then raise exception 'This is not a café pickup QR.';end if;
   begin token_value:=substring(d->>'token' from 14)::uuid;exception when invalid_text_representation then raise exception 'This is not a café pickup QR.';end;
   select * into o from public.orders where pickup_token=token_value for update;
-  if o.id is null then raise exception 'Pickup QR not found. Ask the customer to open their ready order.';end if;
+  if o.order_id is null then raise exception 'Pickup QR not found. Ask the customer to open their ready order.';end if;
   if o.status='Received' then raise exception 'This order has already been collected.';end if;
   if not o.paid or o.status<>'Ready' then raise exception 'Only paid orders marked Ready can be collected.';end if;
   if a='order_pickup' then
-   update public.orders set status='Received',received_at=now(),received_by=me.profile_id where id=o.id returning * into o;
-   update public.order_notifications set read_at=coalesce(read_at,now()) where order_id=o.id;
-   update private.order_push_jobs set status='Skipped' where notice_id in (select id from public.order_notifications where order_id=o.id) and status in ('Queued','Failed');
+   update public.orders set status='Received',received_at=now(),received_by=me.profile_id where order_id=o.order_id returning * into o;
+   update public.order_notifications set read_at=coalesce(read_at,now()) where order_id=o.order_id;
+   update private.order_push_jobs set status='Skipped' where notice_id in (select notice_id from public.order_notifications where order_id=o.order_id) and status in ('Queued','Failed');
   end if;
-  return jsonb_build_object('order',to_jsonb(o),'customer_name',(select name from public.profiles where profile_id=o.user_id),'items',(select coalesce(jsonb_agg(jsonb_build_object('name',name,'qty',qty)),'[]'::jsonb) from public.order_items where order_id=o.id),'message',case when a='order_pickup' then 'Order collected. Enjoy your food!' else 'Pickup verified. Check the items before handover.' end);
+  return jsonb_build_object('order',to_jsonb(o),'customer_name',(select name from public.profiles where profile_id=o.user_id),'items',(select coalesce(jsonb_agg(jsonb_build_object('name',name,'qty',qty)),'[]'::jsonb) from public.order_items where order_id=o.order_id),'message',case when a='order_pickup' then 'Order collected. Enjoy your food!' else 'Pickup verified. Check the items before handover.' end);
  elsif a='register_push_device' then
   if me.role<>'customer' then raise exception 'Customer account required.';end if;
   installation:=(d->>'installation_id')::uuid;
@@ -1733,7 +1733,7 @@ create or replace function private.notify_order_ready() returns trigger
 language plpgsql security definer set search_path = '' as $$
 declare notice uuid;
 begin
- insert into public.order_notifications(user_id,order_id) values(new.user_id,new.id) on conflict(order_id) do nothing returning id into notice;
+ insert into public.order_notifications(user_id,order_id) values(new.user_id,new.order_id) on conflict(order_id) do nothing returning notice_id into notice;
  if notice is not null then
   insert into private.order_push_jobs(notice_id,installation_id,user_id)
    select notice,installation_id,new.user_id from private.user_push_devices where user_id=new.user_id and updated_at>now()-interval '60 days' on conflict do nothing;
@@ -1771,13 +1771,13 @@ begin
  elsif operation='claim' then
   update private.order_push_jobs set status='Skipped' where status='Sending' and last_attempt<now()-interval '5 minutes' and attempts>=3;
   update private.order_push_jobs set status='Queued' where status='Sending' and last_attempt<now()-interval '5 minutes' and attempts<3;
-  update private.order_push_jobs j set status='Skipped' where status in ('Queued','Failed') and (attempts>=3 or not exists(select 1 from private.user_push_devices v join public.order_notifications n on n.id=j.notice_id join public.orders o on o.id=n.order_id join public.profiles p on p.profile_id=j.user_id where v.installation_id=j.installation_id and v.user_id=j.user_id and p.active and o.status='Ready' and o.paid and n.created_at>now()-interval '1 day'));
-  with chosen as(select id from private.order_push_jobs where status in ('Queued','Failed') and attempts<3 and next_attempt<=now() order by next_attempt for update skip locked limit 10), claimed as(update private.order_push_jobs j set status='Sending',attempts=attempts+1,last_attempt=now() from chosen where j.id=chosen.id returning j.*)
-  select coalesce(jsonb_agg(jsonb_build_object('id',j.id,'notice_id',n.id,'order_id',n.order_id,'user_id',j.user_id,'token',v.token,'language',v.language)),'[]'::jsonb) into result from claimed j join private.user_push_devices v on v.installation_id=j.installation_id and v.user_id=j.user_id join public.order_notifications n on n.id=j.notice_id;
+  update private.order_push_jobs j set status='Skipped' where status in ('Queued','Failed') and (attempts>=3 or not exists(select 1 from private.user_push_devices v join public.order_notifications n on n.notice_id=j.notice_id join public.orders o on o.order_id=n.order_id join public.profiles p on p.profile_id=j.user_id where v.installation_id=j.installation_id and v.user_id=j.user_id and p.active and o.status='Ready' and o.paid and n.created_at>now()-interval '1 day'));
+  with chosen as(select order_push_job_id from private.order_push_jobs where status in ('Queued','Failed') and attempts<3 and next_attempt<=now() order by next_attempt for update skip locked limit 10), claimed as(update private.order_push_jobs j set status='Sending',attempts=attempts+1,last_attempt=now() from chosen where j.order_push_job_id=chosen.order_push_job_id returning j.*)
+  select coalesce(jsonb_agg(jsonb_build_object('id',j.order_push_job_id,'notice_id',n.notice_id,'order_id',n.order_id,'user_id',j.user_id,'token',v.token,'language',v.language)),'[]'::jsonb) into result from claimed j join private.user_push_devices v on v.installation_id=j.installation_id and v.user_id=j.user_id join public.order_notifications n on n.notice_id=j.notice_id;
   return result;
  elsif operation='result' then
   if d->>'status' not in ('Sent','Failed','Skipped') then raise exception 'Invalid push result.';end if;
-  update private.order_push_jobs set status=d->>'status',next_attempt=now()+interval '1 minute' where id=(d->>'id')::uuid and status='Sending';
+  update private.order_push_jobs set status=d->>'status',next_attempt=now()+interval '1 minute' where order_push_job_id=(d->>'id')::uuid and status='Sending';
   if coalesce((d->>'invalid_token')::boolean,false) then delete from private.user_push_devices where token=d->>'token';end if;
   return jsonb_build_object('updated',true);
  end if;
@@ -1796,13 +1796,13 @@ do $$begin if to_regclass('cron.job') is not null then
 end if;end $$;
 
 -- Section: staff-history
-create index if not exists bookings_history_date_idx on public.bookings(starts_at desc,id);
-create index if not exists orders_history_date_idx on public.orders(created_at desc,id);
+create index if not exists bookings_history_date_idx on public.bookings(starts_at desc,booking_id);
+create index if not exists orders_history_date_idx on public.orders(created_at desc,order_id);
 create index if not exists order_items_history_order_idx on public.order_items(order_id);
-create index if not exists test_payments_history_date_idx on public.test_payments(created_at desc,id);
-create index if not exists redemptions_history_date_idx on public.redemptions(created_at desc,id);
-create index if not exists bills_history_date_idx on public.bills(created_at desc,id);
-create index if not exists feedback_history_date_idx on public.app_feedback(created_at desc,id);
+create index if not exists test_payments_history_date_idx on public.test_payments(created_at desc,payment_id);
+create index if not exists redemptions_history_date_idx on public.redemptions(created_at desc,redeem_id);
+create index if not exists bills_history_date_idx on public.bills(created_at desc,bill_id);
+create index if not exists feedback_history_date_idx on public.app_feedback(created_at desc,feedback_id);
 
 -- Read-only staff history. Explicit role checks are required because table RLS is
 -- bypassed by this function. No profile contacts, entry tokens or device tokens leave it.
@@ -1847,56 +1847,56 @@ begin
  end if;
 
  with records as (
-  select b.starts_at as sort_at,'Booking:'||b.id as key,'Bookings' as category,p.name as customer,
-   r.name as title,b.id::text as reference,
-   jsonb_build_object('id',b.id,'category','Bookings','customer_name',p.name,'title',r.name,
+  select b.starts_at as sort_at,'Booking:'||b.booking_id as key,'Bookings' as category,p.name as customer,
+   r.name as title,b.booking_id::text as reference,
+   jsonb_build_object('id',b.booking_id,'category','Bookings','customer_name',p.name,'title',r.name,
     'status',b.status,'paid',b.paid,'total',b.total,'starts_at',b.starts_at,'ends_at',b.ends_at,
     'created_at',b.created_at,'guests',b.guests,'minutes',extract(epoch from (b.ends_at-b.starts_at))::int/60,
     'detail',r.kind||' · '||r.zone) as payload
-  from public.bookings b join public.profiles p on p.profile_id=b.user_id join public.resources r on r.id=b.resource_id
+  from public.bookings b join public.profiles p on p.profile_id=b.user_id join public.resources r on r.resource_id=b.resource_id
   where p_module='Activity' and p_category in ('All','Bookings')
    and (p_day is null or b.starts_at>=day_start and b.starts_at<day_end)
   union all
-  select o.created_at,'Order:'||o.id,'Orders',p.name,'Café order',o.id::text,
-   jsonb_build_object('id',o.id,'category','Orders','customer_name',p.name,'title','Café order',
+  select o.created_at,'Order:'||o.order_id,'Orders',p.name,'Café order',o.order_id::text,
+   jsonb_build_object('id',o.order_id,'category','Orders','customer_name',p.name,'title','Café order',
     'status',o.status,'paid',o.paid,'total',o.total,'created_at',o.created_at,'received_at',o.received_at,
-    'detail',coalesce((select string_agg(i.qty||' × '||i.name,', ' order by i.id) from public.order_items i where i.order_id=o.id),''))
+    'detail',coalesce((select string_agg(i.qty||' × '||i.name,', ' order by i.order_item_id) from public.order_items i where i.order_id=o.order_id),''))
   from public.orders o join public.profiles p on p.profile_id=o.user_id
   where p_module='Activity' and p_category in ('All','Orders')
    and (p_day is null or o.created_at>=day_start and o.created_at<day_end)
   union all
-  select e.starts_at,'Event:'||r.id,'Competitions',p.name,e.name,r.id::text,
-   jsonb_build_object('id',r.id,'category','Competitions','customer_name',p.name,'title',e.name,
+  select e.starts_at,'Event:'||r.registration_id,'Competitions',p.name,e.name,r.registration_id::text,
+   jsonb_build_object('id',r.registration_id,'category','Competitions','customer_name',p.name,'title',e.name,
     'status',case when r.status='Withdrawn' then r.status when e.status in ('Completed','Cancelled') then e.status else r.status end,
     'paid',r.paid,'total',r.fee,'starts_at',e.starts_at,'ends_at',e.ends_at,'detail',r.team||' · '||e.game)
-  from public.registrations r join public.events e on e.id=r.event_id join public.profiles p on p.profile_id=r.user_id
+  from public.registrations r join public.events e on e.event_id=r.event_id join public.profiles p on p.profile_id=r.user_id
   where p_module='Activity' and p_category in ('All','Competitions')
    and (p_day is null or e.starts_at>=day_start and e.starts_at<day_end)
   union all
-  select r.created_at,'Reward:'||r.id,'Rewards',p.name,r.name,r.id::text,
-   jsonb_build_object('id',r.id,'category','Rewards','customer_name',p.name,'title',r.name,
+  select r.created_at,'Reward:'||r.redeem_id,'Rewards',p.name,r.name,r.redeem_id::text,
+   jsonb_build_object('id',r.redeem_id,'category','Rewards','customer_name',p.name,'title',r.name,
     'status',r.status,'points',r.points,'created_at',r.created_at,'detail','Points redemption')
   from public.redemptions r join public.profiles p on p.profile_id=r.user_id
   where p_module='Activity' and p_category in ('All','Rewards')
    and (p_day is null or r.created_at>=day_start and r.created_at<day_end)
   union all
-  select t.created_at,'Test:'||t.id,t.status,p.name,t.kind,t.reference,
-   jsonb_build_object('id',t.id,'category','Transactions','customer_name',p.name,'title',t.kind,
+  select t.created_at,'Test:'||t.payment_id,t.status,p.name,t.kind,t.reference,
+   jsonb_build_object('id',t.payment_id,'category','Transactions','customer_name',p.name,'title',t.kind,
     'status',t.status,'total',t.total,'created_at',t.created_at,'method',t.method,'reference',t.reference,
-    'environment','test','payment',to_jsonb(t),'receipt',(select to_jsonb(b) from public.bills b where b.id=t.bill_id))
+    'environment','test','payment',to_jsonb(t),'receipt',(select to_jsonb(b) from public.bills b where b.bill_id=t.bill_id))
   from public.test_payments t join public.profiles p on p.profile_id=t.user_id
   where p_module='Transactions' and (p_category='All' or t.status=p_category)
    and (p_day is null or t.created_at>=day_start and t.created_at<day_end)
   union all
-  select b.created_at,'Bill:'||b.id,b.status,p.name,b.kind,coalesce(b.payment_reference,b.id::text),
-   jsonb_build_object('id',b.id,'category','Transactions','customer_name',p.name,'title',b.kind,
+  select b.created_at,'Bill:'||b.bill_id,b.status,p.name,b.kind,coalesce(b.payment_reference,b.bill_id::text),
+   jsonb_build_object('id',b.bill_id,'category','Transactions','customer_name',p.name,'title',b.kind,
     'status',b.status,'total',b.total,'created_at',b.created_at,'method',b.method,
-    'reference',coalesce(b.payment_reference,b.id::text),'environment','counter','receipt',to_jsonb(b))
+    'reference',coalesce(b.payment_reference,b.bill_id::text),'environment','counter','receipt',to_jsonb(b))
   from public.bills b join public.profiles p on p.profile_id=b.user_id
   where p_module='Transactions' and b.environment<>'test' and (p_category='All' or b.status=p_category)
    and (p_day is null or b.created_at>=day_start and b.created_at<day_end)
   union all
-  select f.created_at,'Feedback:'||f.id,f.status,p.name,f.title,f.id::text,
+  select f.created_at,'Feedback:'||f.feedback_id,f.status,p.name,f.title,f.feedback_id::text,
    to_jsonb(f)||jsonb_build_object('category','Feedback','feedback_category',f.category,'customer_name',p.name)
   from public.app_feedback f join public.profiles p on p.profile_id=f.user_id
   where p_module='Feedback' and (p_category='All' or f.status=p_category)
@@ -1963,11 +1963,11 @@ begin
     with payments as (
         select
             t.created_at as sort_at,
-            'Test:' || t.id as key,
+            'Test:' || t.payment_id as key,
             t.user_id, t.kind, t.status, t.total, t.method, t.reference,
             'test'::text as environment,
             to_jsonb(t) as payment,
-            (select to_jsonb(b) from public.bills b where b.id = t.bill_id) as receipt
+            (select to_jsonb(b) from public.bills b where b.bill_id = t.bill_id) as receipt
         from public.test_payments t
         where (p_kind = 'All' or t.kind = p_kind)
             and (p_status = 'All' or t.status = p_status)
@@ -1976,9 +1976,9 @@ begin
         union all
 
         select
-            b.created_at, 'Bill:' || b.id,
+            b.created_at, 'Bill:' || b.bill_id,
             b.user_id, b.kind, b.status, b.total, b.method,
-            coalesce(b.payment_reference, b.id::text),
+            coalesce(b.payment_reference, b.bill_id::text),
             'counter'::text, null::jsonb, to_jsonb(b)
         from public.bills b
         where b.environment <> 'test'
@@ -2029,7 +2029,7 @@ grant execute on function public.ctfly_staff_transactions(date,text,text,text,ti
 create schema if not exists ctfly_private;
 revoke all on schema ctfly_private from public, anon, authenticated;
 create table if not exists ctfly_private.staff_devices (
- id uuid primary key,
+ staff_device_id uuid primary key,
  staff_id uuid not null references public.staff(staff_id) on delete cascade,
  staff_name text not null check (char_length(staff_name) between 2 and 60),
  device_name text not null check (char_length(device_name) between 1 and 100),
@@ -2040,8 +2040,8 @@ create table if not exists ctfly_private.staff_devices (
 create index if not exists staff_devices_staff_idx on ctfly_private.staff_devices(staff_id);
 alter table ctfly_private.staff_devices enable row level security;
 create table if not exists ctfly_private.staff_device_challenges (
- id uuid primary key default gen_random_uuid(),
- device_id uuid not null references ctfly_private.staff_devices(id) on delete cascade,
+ staff_device_challenge_id uuid primary key default gen_random_uuid(),
+ device_id uuid not null references ctfly_private.staff_devices(staff_device_id) on delete cascade,
  nonce text not null,
  expires_at timestamptz not null default now() + interval '2 minutes'
 );
@@ -2064,26 +2064,26 @@ begin
   if device is null or char_length(trim(coalesce(p_data->>'staff_name',''))) not between 2 and 60 then
    raise exception 'Enter a staff name between 2 and 60 characters.';
   end if;
-  if exists(select 1 from ctfly_private.staff_devices where id=device and staff_id<>p_owner) then
+  if exists(select 1 from ctfly_private.staff_devices where staff_device_id=device and staff_id<>p_owner) then
    raise exception 'This device is already registered to another account.';
   end if;
-  if not exists(select 1 from ctfly_private.staff_devices where id=device and staff_id=p_owner)
+  if not exists(select 1 from ctfly_private.staff_devices where staff_device_id=device and staff_id=p_owner)
    and (select count(*) from ctfly_private.staff_devices where staff_id=p_owner)>=5 then
    raise exception 'Five devices are already registered. Remove a device before adding another.';
   end if;
-  insert into ctfly_private.staff_devices(id,staff_id,staff_name,device_name,public_key)
+  insert into ctfly_private.staff_devices(staff_device_id,staff_id,staff_name,device_name,public_key)
    values(device,p_owner,trim(p_data->>'staff_name'),p_data->>'device_name',p_data->>'public_key')
-   on conflict(id) do update set staff_name=excluded.staff_name, device_name=excluded.device_name,
+   on conflict(staff_device_id) do update set staff_name=excluded.staff_name, device_name=excluded.device_name,
     public_key=excluded.public_key where staff_devices.staff_id=p_owner;
   if not found then raise exception 'This device is already registered to another account.'; end if;
   delete from ctfly_private.staff_device_challenges where device_id=device;
  elsif p_operation='remove' then
-  delete from ctfly_private.staff_devices where id=(p_data->>'device_id')::uuid and staff_id=p_owner;
+  delete from ctfly_private.staff_devices where staff_device_id=(p_data->>'device_id')::uuid and staff_id=p_owner;
  elsif p_operation<>'list' or p_operation is null then
   raise exception 'Unsupported device operation.';
  end if;
- select coalesce(jsonb_agg(jsonb_build_object('id',id,'staff_name',staff_name,'device_name',device_name,
-  'created_at',created_at,'last_used_at',last_used_at) order by created_at,id),'[]'::jsonb)
+ select coalesce(jsonb_agg(jsonb_build_object('id',staff_device_id,'staff_name',staff_name,'device_name',device_name,
+  'created_at',created_at,'last_used_at',last_used_at) order by created_at,staff_device_id),'[]'::jsonb)
  into result from ctfly_private.staff_devices where staff_id=p_owner;
  return jsonb_build_object('devices',result,'limit',5);
 end $$;
@@ -2116,8 +2116,8 @@ create or replace function public.ctfly_staff_device_auth(p_operation text,p_dev
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare d ctfly_private.staff_devices; c ctfly_private.staff_device_challenges; email text;
 begin
- select * into d from ctfly_private.staff_devices where id=p_device for update;
- if d.id is null or not exists(select 1 from public.profiles p where p.profile_id=d.staff_id and p.active and p.role in ('staff','admin')
+ select * into d from ctfly_private.staff_devices where staff_device_id=p_device for update;
+ if d.staff_device_id is null or not exists(select 1 from public.profiles p where p.profile_id=d.staff_id and p.active and p.role in ('staff','admin')
   and exists(select 1 from public.staff s where s.staff_id=p.profile_id)) then
   raise exception 'Device registration is unavailable. Sign in with email and password to add this phone again.';
  end if;
@@ -2128,14 +2128,14 @@ begin
   end if;
   insert into ctfly_private.staff_device_challenges(device_id,nonce)
    values(p_device,gen_random_uuid()::text||gen_random_uuid()::text) returning * into c;
-  return jsonb_build_object('challenge_id',c.id,'nonce',c.nonce);
+  return jsonb_build_object('challenge_id',c.staff_device_challenge_id,'nonce',c.nonce);
  elsif p_operation='consume' then
-  delete from ctfly_private.staff_device_challenges where id=p_challenge and device_id=p_device and expires_at>now() returning * into c;
-  if c.id is null then raise exception 'Fingerprint request expired. Please try again.';end if;
+  delete from ctfly_private.staff_device_challenges where staff_device_challenge_id=p_challenge and device_id=p_device and expires_at>now() returning * into c;
+  if c.staff_device_challenge_id is null then raise exception 'Fingerprint request expired. Please try again.';end if;
   select s.email into email from public.staff s where s.staff_id=d.staff_id;
   return jsonb_build_object('owner',d.staff_id,'email',email,'public_key',d.public_key,'nonce',c.nonce);
  elsif p_operation='check' then
-  update ctfly_private.staff_devices set last_used_at=now() where id=p_device;
+  update ctfly_private.staff_devices set last_used_at=now() where staff_device_id=p_device;
   return jsonb_build_object('owner',d.staff_id);
  end if;
  raise exception 'Unsupported device operation.';

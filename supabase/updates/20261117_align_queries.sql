@@ -186,7 +186,8 @@ begin
   if position('staff_devices' in definition)>0 then
    definition:=replace(definition,'d.user_id','d.staff_id');
    definition:=replace(definition,'staff_devices.user_id','staff_devices.staff_id');
-   definition:=replace(definition,'staff_devices(id,user_id','staff_devices(id,staff_id');
+   definition:=replace(definition,'staff_devices(id,user_id','staff_devices(staff_device_id,staff_id');
+   definition:=replace(definition,'staff_devices(id,staff_id','staff_devices(staff_device_id,staff_id');
    definition:=replace(definition,'where user_id=p_owner','where staff_id=p_owner');
    definition:=replace(definition,'where user_id<>p_owner','where staff_id<>p_owner');
    definition:=replace(definition,'and user_id=p_owner','and staff_id=p_owner');
@@ -210,8 +211,8 @@ begin
  end loop;
 end $$;
 
--- Stop here if a renamed key is still referenced. Shifts, orders, products and
--- auth.users still use id, so those references are allowed.
+-- Stop here if a renamed profile, user, or staff key is still referenced.
+-- auth.users.id stays id. Table primary keys use their own names.
 do $$
 declare fn record; body text; probe text;
 begin
@@ -244,48 +245,62 @@ begin
    ('public','profiles','profile_id'),
    ('public','User','user_id'),
    ('public','staff','staff_id'),
-   ('public','resources','id'),
+   ('public','resources','resource_id'),
    ('public','bookings','user_id'),
-   ('public','bookings','id'),
-   ('public','categories','id'),
-   ('public','products','id'),
-   ('public','stock_records','id'),
+   ('public','bookings','booking_id'),
+   ('public','categories','category_id'),
+   ('public','products','product_id'),
+   ('public','stock_records','stock_id'),
    ('public','orders','user_id'),
-   ('public','orders','id'),
-   ('public','order_items','id'),
-   ('public','events','id'),
+   ('public','orders','order_id'),
+   ('public','order_items','order_item_id'),
+   ('public','events','event_id'),
    ('public','registrations','user_id'),
-   ('public','matches','id'),
+   ('public','registrations','registration_id'),
+   ('public','matches','match_id'),
    ('public','bills','user_id'),
-   ('public','booking_extensions','id'),
-   ('public','rewards','id'),
+   ('public','bills','bill_id'),
+   ('public','booking_extensions','booking_extension_id'),
+   ('public','rewards','reward_id'),
    ('public','redemptions','user_id'),
+   ('public','redemptions','redeem_id'),
    ('public','points_transactions','user_id'),
+   ('public','points_transactions','point_id'),
    ('public','favorites','user_id'),
    ('public','app_feedback','user_id'),
+   ('public','app_feedback','feedback_id'),
    ('public','test_payments','user_id'),
-   ('public','promotions','id'),
+   ('public','test_payments','payment_id'),
+   ('public','promotions','promotion_id'),
    ('public','promotions','target_user'),
    ('public','promo_claims','user_id'),
    ('public','receipt_email_jobs','user_id'),
    ('public','order_notifications','user_id'),
+   ('public','order_notifications','notice_id'),
+   ('public','requests','request_id'),
    ('public','requests','user_id'),
    ('private','user_push_devices','user_id'),
    ('private','order_push_jobs','user_id'),
-   ('public','shifts','id'),
+   ('private','order_push_jobs','order_push_job_id'),
+   ('public','shifts','shift_id'),
    ('public','shifts','staff_id'),
-   ('public','attendance','id'),
+   ('public','attendance','attendance_id'),
    ('public','attendance','shift_id'),
+   ('public','leave_requests','leave_request_id'),
    ('public','leave_requests','staff_id'),
+   ('public','tasks','task_id'),
    ('public','tasks','staff_id'),
    ('public','checklist','staff_id'),
+   ('public','handovers','handover_id'),
    ('public','handovers','staff_id'),
    ('public','handover_reads','staff_id'),
+   ('public','tickets','ticket_id'),
    ('public','tickets','staff_id'),
    ('public','tickets','assigned_staff'),
-   ('ctfly_private','staff_devices','id'),
+   ('ctfly_private','staff_devices','staff_device_id'),
    ('ctfly_private','staff_devices','staff_id'),
-   ('ctfly_private','staff_device_challenges','device_id')
+   ('ctfly_private','staff_device_challenges','device_id'),
+   ('ctfly_private','staff_device_challenges','staff_device_challenge_id')
   ) as required(schema_name,table_name,column_name)
  loop
   if to_regclass(format('%I.%I', item.schema_name, item.table_name)) is null then

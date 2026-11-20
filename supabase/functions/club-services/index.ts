@@ -1,6 +1,6 @@
 import nodemailer from 'npm:nodemailer@10.1.0';
 import {Buffer} from 'node:buffer';
-import {receiptHtml,receiptLines,receiptNumber,type Bill} from './receipt.ts';
+import {billKey,receiptHtml,receiptLines,receiptNumber,type Bill} from './receipt.ts';
 import {logoBase64,logoCid} from './brand.ts';
 import {receiptPdf} from './pdf.ts';
 const env=(name:string)=>Deno.env.get(name)??'';
@@ -24,9 +24,10 @@ async function dispatch(secret:string){
    const pdf=await receiptPdf(job.bill);
    const subject='CTFLY receipt '+receiptNumber(job.bill);
    const html=receiptHtml(job.bill),text=receiptLines(job.bill).join('\n');let providerId='';
+   const receiptId=billKey(job.bill);
    if(useResend){
     sending=true;
-    const res=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+resend,'Content-Type':'application/json','Idempotency-Key':'ctfly-receipt-'+job.bill.id},body:JSON.stringify({from,to:[job.email],subject,html,text,attachments:[{filename:'ctfly-logo.jpg',content:logoBase64,content_type:'image/jpeg',content_id:logoCid},...(pdf?[{filename:'CTFLY-'+job.bill.id+'.pdf',content:Buffer.from(pdf).toString('base64')}]:[])]}),signal:AbortSignal.timeout(15000)});
+    const res=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+resend,'Content-Type':'application/json','Idempotency-Key':'ctfly-receipt-'+receiptId},body:JSON.stringify({from,to:[job.email],subject,html,text,attachments:[{filename:'ctfly-logo.jpg',content:logoBase64,content_type:'image/jpeg',content_id:logoCid},...(pdf?[{filename:'CTFLY-'+receiptId+'.pdf',content:Buffer.from(pdf).toString('base64')}]:[])]}),signal:AbortSignal.timeout(15000)});
     if(!res.ok){sending=false;throw Error('Mail provider rejected the request');}providerId=(await res.json()).id;
    }else{
     const port=Number(env('SMTP_PORT')||'465');
@@ -34,13 +35,13 @@ async function dispatch(secret:string){
     try{
      // Verify the connection before sending so configuration failures remain safe to retry.
      await transport.verify();sending=true;
-     const result=await transport.sendMail({from:'CTFLY Gaming Cafe <'+smtpUser+'>',to:job.email,subject,html,text,messageId:'<ctfly-'+job.bill.id+'@'+smtpUser.split('@')[1]+'>',attachments:[{filename:'ctfly-logo.jpg',content:Buffer.from(logoBase64,'base64'),contentType:'image/jpeg',cid:logoCid,contentDisposition:'inline'},...(pdf?[{filename:'CTFLY-'+job.bill.id+'.pdf',content:Buffer.from(pdf),contentType:'application/pdf'}]:[])]});
+     const result=await transport.sendMail({from:'CTFLY Gaming Cafe <'+smtpUser+'>',to:job.email,subject,html,text,messageId:'<ctfly-'+receiptId+'@'+smtpUser.split('@')[1]+'>',attachments:[{filename:'ctfly-logo.jpg',content:Buffer.from(logoBase64,'base64'),contentType:'image/jpeg',cid:logoCid,contentDisposition:'inline'},...(pdf?[{filename:'CTFLY-'+receiptId+'.pdf',content:Buffer.from(pdf),contentType:'application/pdf'}]:[])]});
      if(!result.accepted?.length)throw Error('Recipient rejected');providerId=result.messageId;
     }finally{transport.close();}
    }
-   await worker('result',{id:job.bill.id,status:'Sent',provider_id:providerId});processed++;
+   await worker('result',{id:receiptId,status:'Sent',provider_id:providerId});processed++;
   }catch{
-   await worker('result',{id:job.bill.id,status:sending?'Unknown':'Failed',error:sending?'Delivery was interrupted. Verify delivery before retrying.':'Receipt PDF, mail configuration or recipient could not be verified.'});
+   await worker('result',{id:billKey(job.bill),status:sending?'Unknown':'Failed',error:sending?'Delivery was interrupted. Verify delivery before retrying.':'Receipt PDF, mail configuration or recipient could not be verified.'});
   }
  }
  return {configured:true,processed};

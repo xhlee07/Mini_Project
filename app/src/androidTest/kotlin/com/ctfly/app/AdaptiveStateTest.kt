@@ -14,6 +14,7 @@ import com.ctfly.app.auth.session.StaffSession
 import com.ctfly.app.database.local.AppPreferences
 import com.ctfly.app.database.remote.ClubGateway
 import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.resourceId
 import com.ctfly.app.database.remote.rows
 import com.ctfly.app.database.remote.supabase.CtflyApi
 import com.ctfly.app.database.remote.text
@@ -367,7 +368,7 @@ class AdaptiveStateTest {
         scenario!!.onActivity {
             val r =
                 ViewModelProvider(it)[AppViewModel::class.java].rows("resources").first { r ->
-                    r.optLong("id") == id
+                    r.resourceId().toLong() == id
                 }
             assertEquals("Racing", r.text("kind"))
             assertEquals("VIP", r.text("zone"))

@@ -12,7 +12,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ctfly.app.database.remote.bookingId
+import com.ctfly.app.database.remote.resourceId
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.billId
+import com.ctfly.app.database.remote.orderId
+import com.ctfly.app.database.remote.paymentId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.dateLabel
 import com.ctfly.app.domain.money
@@ -39,7 +44,7 @@ import org.json.JSONObject
 
 @Composable
 fun BookingCard(vm: AppViewModel, b: JSONObject) {
-    val resource = vm.rows("resources").find { it.text("id") == b.text("resource_id") }
+    val resource = vm.rows("resources").find { it.resourceId() == b.text("resource_id") }
     SurfaceCard {
         Chip(b.text("status"), if (b.text("status") == "Active") Aqua else Lime)
         AppText(
@@ -73,7 +78,7 @@ fun BookingCard(vm: AppViewModel, b: JSONObject) {
         if (b.text("status") == "Confirmed")
             Button(
                 onClick = {
-                    vm.set("selectedBooking", b.text("id"))
+                    vm.set("selectedBooking", b.bookingId())
                     vm.set("dialog", "qr")
                 }
             ) {
@@ -81,7 +86,7 @@ fun BookingCard(vm: AppViewModel, b: JSONObject) {
             }
         if (
             vm.rows("test_payments").any {
-                it.text("source_id") == b.text("id") && it.text("status") == "Succeeded"
+                it.text("source_id") == b.bookingId() && it.text("status") == "Succeeded"
             }
         )
             Chip("Online payment", Aqua)
@@ -94,11 +99,11 @@ fun BookingCard(vm: AppViewModel, b: JSONObject) {
                 fontSize = 11.sp,
             )
             if (b.text("hold_expires_at").isNotBlank()) HoldCountdown(vm, b.text("hold_expires_at"))
-            PayButton(vm, "Booking", b.text("id"))
+            PayButton(vm, "Booking", b.bookingId())
             if (!vm.crew)
                 TextButton(
                     onClick = {
-                        vm.set("cancelBooking", b.text("id"))
+                        vm.set("cancelBooking", b.bookingId())
                         vm.set("dialog", "cancelBooking")
                     }
                 ) {
@@ -112,7 +117,7 @@ fun BookingCard(vm: AppViewModel, b: JSONObject) {
 fun BookingsScreen(vm: AppViewModel) {
     val tab = vm.field("bookingTab", "Spaces")
     val cafeOrders = vm.confirmedCafeOrders()
-    val confirmedOrderIds = cafeOrders.map { it.text("id") }.toSet()
+    val confirmedOrderIds = cafeOrders.map { it.orderId() }.toSet()
     val payments =
         vm.rows("test_payments").filter {
             it.text("kind") != "Order" || it.text("source_id") in confirmedOrderIds
@@ -130,7 +135,7 @@ fun BookingsScreen(vm: AppViewModel) {
         }
         when (tab) {
             "Payments" -> {
-                items(payments, key = { it.text("id") }) { p ->
+                items(payments, key = { it.paymentId() }) { p ->
                     SurfaceCard {
                         Chip(p.text("status"))
                         AppText(
@@ -151,18 +156,18 @@ fun BookingsScreen(vm: AppViewModel) {
                     item { EmptyState("No payments yet", "Online payments will appear here.") }
             }
             "Spaces" -> {
-                items(vm.rows("bookings"), key = { it.text("id") }) { BookingCard(vm, it) }
+                items(vm.rows("bookings"), key = { it.bookingId() }) { BookingCard(vm, it) }
                 if (vm.rows("bookings").isEmpty())
                     item { EmptyState("No reservations yet", "Your next session starts in Play.") }
             }
             "Orders" -> {
                 item { PickupAlertPermission(vm) }
-                items(cafeOrders, key = { it.text("id") }) { o ->
+                items(cafeOrders, key = { it.orderId() }) { o ->
                     SurfaceCard {
                         Chip(o.text("status"), Orange)
-                        AppText("Order #${o.text("id").take(8)}", fontWeight = FontWeight.Bold)
+                        AppText("Order #${o.orderId().take(8)}", fontWeight = FontWeight.Bold)
                         vm.rows("order_items")
-                            .filter { it.text("order_id") == o.text("id") }
+                            .filter { it.text("order_id") == o.orderId() }
                             .forEach {
                                 AppText("${it.optInt("qty")} × ${it.text("name")}", color = Muted)
                             }
@@ -172,7 +177,7 @@ fun BookingsScreen(vm: AppViewModel) {
                         OrderPickupDetails(vm, o)
                         if (
                             vm.rows("test_payments").any {
-                                it.text("source_id") == o.text("id") &&
+                                it.text("source_id") == o.orderId() &&
                                     it.text("status") == "Succeeded"
                             }
                         )
@@ -180,7 +185,7 @@ fun BookingsScreen(vm: AppViewModel) {
                         TextButton(
                             onClick = {
                                 vm.rows("order_items")
-                                    .filter { it.text("order_id") == o.text("id") }
+                                    .filter { it.text("order_id") == o.orderId() }
                                     .forEach { i ->
                                         vm.cartChange(i.text("product_id"), i.optInt("qty"))
                                     }
@@ -197,7 +202,7 @@ fun BookingsScreen(vm: AppViewModel) {
                     }
             }
             else -> {
-                items(vm.rows("bills"), key = { it.text("id") }) { b ->
+                items(vm.rows("bills"), key = { it.billId() }) { b ->
                     SurfaceCard {
                         Chip(b.text("status", "Paid"))
                         AppText(

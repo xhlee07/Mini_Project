@@ -18,6 +18,7 @@ import com.ctfly.app.database.local.AppPreferences
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.profileId
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.orderId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.ui.common.AppStrings
 import com.google.firebase.FirebaseApp
@@ -85,11 +86,11 @@ object PickupNotifications {
         val owner = user.profileId()
         snapshot.rows("orders").forEach { order ->
             if (order.text("status") == "Ready" && order.optBoolean("paid")) {
-                publish(context, owner, order.text("id"))
+                publish(context, owner, order.orderId())
             } else {
                 context
                     .getSystemService(NotificationManager::class.java)
-                    .cancel("$owner:${order.text("id")}", 0)
+                    .cancel("$owner:${order.orderId()}", 0)
             }
         }
     }

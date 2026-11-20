@@ -1,5 +1,6 @@
 export type Bill = {
-  id: string;
+  id?: string;
+  bill_id?: string;
   kind: string;
   created_at: string;
   status: string;
@@ -38,6 +39,7 @@ const formatDate = (value: unknown, options: Intl.DateTimeFormatOptions) => {
 };
 export const receiptDate = (value: unknown) =>
   formatDate(value, { dateStyle: "medium", timeStyle: "short", hour12: true });
+export const billKey = (b: Bill) => b.bill_id || b.id || "";
 export const receiptNumber = (b: Bill) => {
   const stamp = formatDate(b.created_at, {
     year: "numeric",
@@ -45,7 +47,7 @@ export const receiptNumber = (b: Bill) => {
     day: "2-digit",
   }).split("/").reverse().join("");
   // Keep the full immutable bill ID: repeated downloads keep the same unique number.
-  return "CT-" + stamp + "-" + b.id.toUpperCase();
+  return "CT-" + stamp + "-" + billKey(b).toUpperCase();
 };
 export type ReceiptRow = { label: string; value: string };
 export type ReceiptSection = { title: string; rows: ReceiptRow[] };

@@ -12,8 +12,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ctfly.app.database.remote.bookingId
 import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.resourceId
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.eventId
+import com.ctfly.app.database.remote.orderId
+import com.ctfly.app.database.remote.redeemId
+import com.ctfly.app.database.remote.registrationId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.dateLabel
 import com.ctfly.app.domain.money
@@ -112,12 +118,12 @@ fun OperationsScreen(vm: AppViewModel) {
                     SurfaceCard {
                         AppText(
                             vm.rows("resources")
-                                .find { it.text("id") == b.text("resource_id") }
+                                .find { it.resourceId() == b.text("resource_id") }
                                 ?.text("name") ?: "Space",
                             fontWeight = FontWeight.Bold,
                         )
                         AppText(
-                            "Booking ${b.text("id").take(8)} · ${dateLabel(b.text("starts_at"))}",
+                            "Booking ${b.bookingId().take(8)} · ${dateLabel(b.text("starts_at"))}",
                             color = Muted,
                             fontSize = 12.sp,
                         )
@@ -130,7 +136,7 @@ fun OperationsScreen(vm: AppViewModel) {
                             TextButton(
                                 onClick = {
                                     vm.set("paymentKind", "Booking")
-                                    vm.set("paymentId", b.text("id"))
+                                    vm.set("paymentId", b.bookingId())
                                     vm.set("dialog", "pay")
                                 }
                             ) {
@@ -143,7 +149,7 @@ fun OperationsScreen(vm: AppViewModel) {
                             TextButton(
                                 onClick = {
                                     vm.set("paymentKind", "Extension30")
-                                    vm.set("paymentId", b.text("id"))
+                                    vm.set("paymentId", b.bookingId())
                                     vm.set("dialog", "extendPaid")
                                 }
                             ) {
@@ -152,7 +158,7 @@ fun OperationsScreen(vm: AppViewModel) {
                         if (b.text("status") == "Active")
                             TextButton(
                                 onClick = {
-                                    vm.set("endBooking", b.text("id"))
+                                    vm.set("endBooking", b.bookingId())
                                     vm.set("dialog", "end")
                                 }
                             ) {
@@ -163,7 +169,7 @@ fun OperationsScreen(vm: AppViewModel) {
                                 onClick = {
                                     vm.openForm(
                                         "extend_booking",
-                                        obj("id" to b.text("id"), "minutes" to "30"),
+                                        obj("id" to b.bookingId(), "minutes" to "30"),
                                     )
                                 }
                             ) {
@@ -178,24 +184,24 @@ fun OperationsScreen(vm: AppViewModel) {
                     }
                 ) { o ->
                     SurfaceCard {
-                        AppText("Order ${o.text("id").take(8)}", fontWeight = FontWeight.Bold)
+                        AppText("Order ${o.orderId().take(8)}", fontWeight = FontWeight.Bold)
                         Chip(o.text("status"), Orange)
                         if (
                             vm.rows("test_payments").any {
-                                it.text("source_id") == o.text("id") &&
+                                it.text("source_id") == o.orderId() &&
                                     it.text("status") == "Succeeded"
                             }
                         )
                             Chip("Online payment", Aqua)
                         vm.rows("order_items")
-                            .filter { it.text("order_id") == o.text("id") }
+                            .filter { it.text("order_id") == o.orderId() }
                             .forEach { AppText("${it.optInt("qty")} × ${it.text("name")}") }
                         AppText("Counter pickup", color = Muted)
                         if (!o.optBoolean("paid"))
                             TextButton(
                                 onClick = {
                                     vm.set("paymentKind", "Order")
-                                    vm.set("paymentId", o.text("id"))
+                                    vm.set("paymentId", o.orderId())
                                     vm.set("dialog", "pay")
                                 }
                             ) {
@@ -210,7 +216,7 @@ fun OperationsScreen(vm: AppViewModel) {
                                     onClick = {
                                         vm.action(
                                             "order_status",
-                                            obj("id" to o.text("id"), "status" to next),
+                                            obj("id" to o.orderId(), "status" to next),
                                         )
                                     },
                                     enabled = !vm.busy,
@@ -238,7 +244,7 @@ fun OperationsScreen(vm: AppViewModel) {
                         AppText(r.text("team"), fontWeight = FontWeight.Bold)
                         AppText(
                             vm.rows("events")
-                                .find { it.text("id") == r.text("event_id") }
+                                .find { it.eventId() == r.text("event_id") }
                                 ?.text("name") ?: "Event",
                             color = Muted,
                         )
@@ -246,7 +252,7 @@ fun OperationsScreen(vm: AppViewModel) {
                             TextButton(
                                 onClick = {
                                     vm.set("paymentKind", "Event")
-                                    vm.set("paymentId", r.text("id"))
+                                    vm.set("paymentId", r.registrationId())
                                     vm.set("dialog", "pay")
                                 }
                             ) {
@@ -259,9 +265,9 @@ fun OperationsScreen(vm: AppViewModel) {
                 items(vm.rows("redemptions").filter { it.text("status") == "Pending" }) { r ->
                     SurfaceCard {
                         AppText(r.text("name"), fontWeight = FontWeight.Bold)
-                        AppText("Voucher ${r.text("id").take(8)}", color = Muted)
+                        AppText("Voucher ${r.redeemId().take(8)}", color = Muted)
                         Button(
-                            onClick = { vm.action("collect_reward", obj("id" to r.text("id"))) },
+                            onClick = { vm.action("collect_reward", obj("id" to r.redeemId())) },
                             enabled = !vm.busy,
                         ) {
                             AppText("Mark collected")

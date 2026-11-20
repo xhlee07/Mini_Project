@@ -25,6 +25,7 @@ import com.ctfly.app.BuildConfig
 import com.ctfly.app.database.local.AppPreferences
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.feedbackId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.dateLabel
 import com.ctfly.app.state.AppViewModel
@@ -219,7 +220,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                             "See whether the team has reviewed your feedback.",
                         )
                     }
-                    items(vm.rows("feedback"), key = { it.text("id") }) { feedback ->
+                    items(vm.rows("feedback"), key = { it.feedbackId() }) { feedback ->
                         FeedbackCard(feedback)
                     }
                 }
@@ -266,7 +267,7 @@ fun FeedbackCard(feedback: JSONObject, vm: AppViewModel? = null) {
                         onClick = {
                             vm.action(
                                 "feedback_status",
-                                obj("id" to feedback.text("id"), "status" to "Reviewed"),
+                                obj("id" to feedback.feedbackId(), "status" to "Reviewed"),
                             ) {
                                 vm.set(
                                     "feedbackHistoryRevision",
@@ -275,7 +276,7 @@ fun FeedbackCard(feedback: JSONObject, vm: AppViewModel? = null) {
                             }
                         },
                         enabled = !vm.busy,
-                        modifier = Modifier.testTag("reviewFeedback-${feedback.text("id")}"),
+                        modifier = Modifier.testTag("reviewFeedback-${feedback.feedbackId()}"),
                     ) {
                         AppText("Mark reviewed")
                     }
@@ -283,7 +284,7 @@ fun FeedbackCard(feedback: JSONObject, vm: AppViewModel? = null) {
                     onClick = {
                         vm.action(
                             "feedback_status",
-                            obj("id" to feedback.text("id"), "status" to "Resolved"),
+                            obj("id" to feedback.feedbackId(), "status" to "Resolved"),
                         ) {
                             vm.set(
                                 "feedbackHistoryRevision",
@@ -292,7 +293,7 @@ fun FeedbackCard(feedback: JSONObject, vm: AppViewModel? = null) {
                         }
                     },
                     enabled = !vm.busy,
-                    modifier = Modifier.testTag("resolveFeedback-${feedback.text("id")}"),
+                    modifier = Modifier.testTag("resolveFeedback-${feedback.feedbackId()}"),
                 ) {
                     AppText("Mark resolved")
                 }

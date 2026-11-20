@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.orderId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.state.AppViewModel
 import com.ctfly.app.ui.common.AppText
@@ -24,7 +25,7 @@ fun StaffPickupContent(vm: AppViewModel) {
     val preview = runCatching { JSONObject(vm.field("pickupPreview")) }.getOrDefault(JSONObject())
     val order = preview.optJSONObject("order")
     if (order != null) {
-        AppText("Order #${order.text("id").take(8)}", fontWeight = FontWeight.Bold)
+        AppText("Order #${order.orderId().take(8)}", fontWeight = FontWeight.Bold)
         AppText(preview.text("customer_name"), color = Aqua)
         preview.rows("items").forEach { AppText("${it.optInt("qty")} × ${it.text("name")}") }
         AppText("Paid · Ready for pickup", color = Lime, fontWeight = FontWeight.Bold)

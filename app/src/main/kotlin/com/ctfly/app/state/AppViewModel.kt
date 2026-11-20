@@ -15,9 +15,15 @@ import com.ctfly.app.auth.biometrics.StaffBiometricRequest
 import com.ctfly.app.auth.biometrics.StaffBiometrics
 import com.ctfly.app.auth.session.StaffSessionGateway
 import com.ctfly.app.database.remote.ApiFailure
+import com.ctfly.app.database.remote.bookingId
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.profileId
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.eventId
+import com.ctfly.app.database.remote.orderId
+import com.ctfly.app.database.remote.paymentId
+import com.ctfly.app.database.remote.productId
+import com.ctfly.app.database.remote.registrationId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.CafeZone
 import com.ctfly.app.domain.adult
@@ -154,7 +160,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
         set("checkoutReturn", if (crew) "Transactions" else "Bookings")
         set("checkoutKind", payment.text("kind"))
         set("checkoutSource", payment.text("source_id"))
-        set("checkoutPayment", payment.text("id"))
+        set("checkoutPayment", payment.paymentId())
         set("checkoutResult", payment.toString())
         set("page", "Checkout")
     }
@@ -162,7 +168,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
     fun currentCheckoutPayment(): JSONObject {
         val id = field("checkoutPayment")
         if (id.isBlank()) return JSONObject()
-        return rows("test_payments").find { it.text("id") == id }
+        return rows("test_payments").find { it.paymentId() == id }
             ?: runCatching { JSONObject(field("checkoutResult")) }.getOrDefault(JSONObject())
     }
 
@@ -182,7 +188,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                             it.text("status", "Paid") in listOf("Paid", "Void")
                     }
                     .map { it.text("source_id") }
-        return rows("orders").filter { it.optBoolean("paid") || it.text("id") in settled }
+        return rows("orders").filter { it.optBoolean("paid") || it.orderId() in settled }
     }
 
     fun leaveCheckout() {
@@ -205,7 +211,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                         finishCheckoutExit(false)
                     } else {
                         val payment = currentCheckoutPayment()
-                        val order = rows("orders").find { it.text("id") == source }
+                        val order = rows("orders").find { it.orderId() == source }
                         if (
                             order?.optBoolean("paid") == true ||
                                 payment.text("status") in listOf("Succeeded", "Refunded")
@@ -248,7 +254,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                                     }
                                 if (generation != accountGeneration) return@run
                                 acceptSnapshot(snapshot)
-                                val latest = rows("orders").find { it.text("id") == source }
+                                val latest = rows("orders").find { it.orderId() == source }
                                 when {
                                     latest?.optBoolean("paid") == true ||
                                         currentCheckoutPayment().text("status") in
@@ -298,11 +304,11 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
         return when (payment.text("kind")) {
             "Order" ->
                 rows("orders").any {
-                    it.text("id") == id && it.text("status") == "Pending" && it.optBoolean("paid")
+                    it.orderId() == id && it.text("status") == "Pending" && it.optBoolean("paid")
                 }
             "Booking" ->
                 rows("bookings").any {
-                    it.text("id") == id &&
+                    it.bookingId() == id &&
                         it.text("status") == "Confirmed" &&
                         it.optBoolean("paid") &&
                         runCatching {
@@ -313,11 +319,11 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
                 }
             "Event" ->
                 rows("registrations").any { r ->
-                    r.text("id") == id &&
+                    r.registrationId() == id &&
                         r.text("status") == "Registered" &&
                         r.optBoolean("paid") &&
                         rows("events").any { e ->
-                            e.text("id") == r.text("event_id") &&
+                            e.eventId() == r.text("event_id") &&
                                 e.text("status") == "Open" &&
                                 runCatching {
                                         java.time.Instant.parse(e.text("starts_at"))
@@ -374,11 +380,11 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
     private fun acceptCheckoutPayment(result: JSONObject) {
         result.optJSONObject("payment")?.let {
             result.optJSONObject("receipt")?.let { receipt -> it.put("receipt", receipt) }
-            set("checkoutPayment", it.text("id"))
+            set("checkoutPayment", it.paymentId())
             set("checkoutResult", it.toString())
             val payments = JSONArray()
             rows("test_payments")
-                .filter { p -> p.text("id") != it.text("id") }
+                .filter { p -> p.paymentId() != it.paymentId() }
                 .forEach { p -> payments.put(p) }
             payments.put(it)
             data = JSONObject(data.toString()).put("test_payments", payments)
@@ -487,7 +493,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
         set("notificationOwner", "")
         set("notificationOrder", "")
         if (owner != userId || role != "customer") return
-        val order = rows("orders").find { it.text("id") == id }
+        val order = rows("orders").find { it.orderId() == id }
         if (order?.text("status") == "Ready" && order.optBoolean("paid")) openPickup(order)
         else openCafeOrders()
     }
@@ -1159,7 +1165,7 @@ class AppViewModel(application: Application, private val saved: SavedStateHandle
 
     fun cartChange(id: String, delta: Int) {
         val map = cart().toMutableMap()
-        val stock = rows("products").find { it.text("id") == id }?.optInt("stock") ?: 0
+        val stock = rows("products").find { it.productId() == id }?.optInt("stock") ?: 0
         val qty = ((map[id] ?: 0) + delta).coerceIn(0, minOf(20, stock))
         if (qty == 0) map.remove(id) else map[id] = qty
         set("cart", JSONObject(map as Map<*, *>).toString())

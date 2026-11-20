@@ -11,6 +11,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.ctfly.app.database.local.SessionVault
 import com.ctfly.app.database.remote.ClubGateway
 import com.ctfly.app.database.remote.obj
+import com.ctfly.app.database.remote.resourceId
 import com.ctfly.app.database.remote.rows
 import com.ctfly.app.database.remote.supabase.CtflyApi
 import com.ctfly.app.database.remote.text
@@ -56,7 +57,7 @@ class RevisionStateTest {
     @Test fun currentTimeBookingResetsDraftAndErrorAppearsAboveFields() {
         Assume.assumeFalse(BuildConfig.STAFF_APP);launch()
         var resource=""
-        change{vm->resource=vm.rows("resources").first{it.text("kind")=="PC"}.text("id");vm.set("bookTime","00:00");vm.set("bookMinutes","180");vm.resetBookingDraft(resource);vm.set("dialog","book")}
+        change{vm->resource=vm.rows("resources").first{it.text("kind")=="PC"}.resourceId();vm.set("bookTime","00:00");vm.set("bookMinutes","180");vm.resetBookingDraft(resource);vm.set("dialog","book")}
         compose.onNodeWithText("30 minutes").assertIsDisplayed()
         change{vm->assertTrue(vm.field("bookTime").isBlank());vm.set("bookDate","2020-01-01")}
         compose.onNodeWithText("Confirm reservation").performScrollTo().performClick()

@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.repeatOnLifecycle
+import com.ctfly.app.database.remote.resourceId
 import com.ctfly.app.database.remote.rows
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.VenueArea
@@ -160,7 +161,7 @@ fun PlayScreen(vm: AppViewModel) {
                 )
             }
         }
-        items(resources, key = { it.text("id") }) { r ->
+        items(resources, key = { it.resourceId() }) { r ->
             SurfaceCard {
                 if (kind in listOf("PC", "VIPRoom")) {
                     AppIcon(
@@ -192,7 +193,7 @@ fun PlayScreen(vm: AppViewModel) {
                 )
                 Button(
                     onClick = {
-                        vm.resetBookingDraft(r.text("id"))
+                        vm.resetBookingDraft(r.resourceId())
                         vm.set("bookGuests", if (kind == "VIPRoom") roomPlayers.toString() else "1")
                         vm.set("dialog", "book")
                     },

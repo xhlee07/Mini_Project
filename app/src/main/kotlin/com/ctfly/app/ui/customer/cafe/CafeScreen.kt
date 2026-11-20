@@ -19,6 +19,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.categoryId
+import com.ctfly.app.database.remote.orderId
+import com.ctfly.app.database.remote.productId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.dateLabel
 import com.ctfly.app.domain.money
@@ -47,7 +50,7 @@ fun AppViewModel.openCafeOrders() {
 
 fun AppViewModel.openPickup(order: JSONObject) {
     openCafeOrders()
-    set("selectedOrder", order.text("id"))
+    set("selectedOrder", order.orderId())
     set("dialog", "pickupQr")
 }
 
@@ -63,9 +66,9 @@ fun CafeScreen(vm: AppViewModel) {
             p.optBoolean("active", true) &&
                 p.text("name").contains(query, true) &&
                 (category == "All" ||
-                    category == "Favorites" && p.text("id") in favorites ||
+                    category == "Favorites" && p.productId() in favorites ||
                     vm.rows("categories").any {
-                        it.text("id") == p.text("category_id") && it.text("name") == category
+                        it.categoryId() == p.text("category_id") && it.text("name") == category
                     })
         }
     Column(Modifier.fillMaxSize()) {
@@ -90,7 +93,7 @@ fun CafeScreen(vm: AppViewModel) {
                     FilterRow(categories, category) { vm.set("category", it) }
                 }
             }
-            items(products, key = { it.text("id") }) { p ->
+            items(products, key = { it.productId() }) { p ->
                 Card(
                     shape = RoundedCornerShape(22.dp),
                     colors = CardDefaults.cardColors(containerColor = Panel),
@@ -102,11 +105,11 @@ fun CafeScreen(vm: AppViewModel) {
                             p.text("name"),
                         )
                         IconButton(
-                            onClick = { vm.action("favorite", obj("id" to p.text("id"))) },
+                            onClick = { vm.action("favorite", obj("id" to p.productId())) },
                             modifier = Modifier.align(Alignment.TopEnd),
                         ) {
                             AppIcon(
-                                if (p.text("id") in favorites) Icons.Outlined.Favorite
+                                if (p.productId() in favorites) Icons.Outlined.Favorite
                                 else Icons.Outlined.FavoriteBorder,
                                 "Favorite",
                                 tint = Lime,
@@ -123,14 +126,14 @@ fun CafeScreen(vm: AppViewModel) {
                             color = Orange,
                             fontWeight = FontWeight.Bold,
                         )
-                        val qty = vm.cart()[p.text("id")] ?: 0
+                        val qty = vm.cart()[p.productId()] ?: 0
                         Row(
                             Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             if (qty > 0) {
-                                IconButton(onClick = { vm.cartChange(p.text("id"), -1) }) {
+                                IconButton(onClick = { vm.cartChange(p.productId(), -1) }) {
                                     AppIcon(Icons.Outlined.Remove, "Remove one")
                                 }
                                 AppText(qty.toString())
@@ -144,7 +147,7 @@ fun CafeScreen(vm: AppViewModel) {
                                 )
                             }
                             FilledIconButton(
-                                onClick = { vm.cartChange(p.text("id"), 1) },
+                                onClick = { vm.cartChange(p.productId(), 1) },
                                 enabled = p.optInt("stock") > qty,
                             ) {
                                 AppIcon(Icons.Outlined.Add, "Add ${p.text("name")}")
@@ -168,7 +171,7 @@ private fun CafePaymentBar(vm: AppViewModel) {
     val quantity = cart.values.sum()
     val total =
         cart.entries.sumOf { (id, qty) ->
-            (vm.rows("products").find { it.text("id") == id }?.optInt("price") ?: 0) * qty
+            (vm.rows("products").find { it.productId() == id }?.optInt("price") ?: 0) * qty
         }
     val activeOrders =
         vm.confirmedCafeOrders().count {
@@ -262,7 +265,7 @@ fun OrderPickupDetails(vm: AppViewModel, order: JSONObject) {
 
 @Composable
 fun PickupQrContent(vm: AppViewModel) {
-    val order = vm.rows("orders").find { it.text("id") == vm.field("selectedOrder") }
+    val order = vm.rows("orders").find { it.orderId() == vm.field("selectedOrder") }
     if (order == null || !order.optBoolean("paid") || order.text("status") != "Ready") {
         EmptyState(
             if (order?.text("status") in listOf("Received", "Delivered")) "Order collected"
@@ -271,7 +274,7 @@ fun PickupQrContent(vm: AppViewModel) {
         )
         return
     }
-    AppText("Order #${order.text("id").take(8)}", fontWeight = FontWeight.Bold)
+    AppText("Order #${order.orderId().take(8)}", fontWeight = FontWeight.Bold)
     AppText("Your order is ready!", color = Lime)
     val token = order.text("pickup_token")
     if (token.isBlank()) {
@@ -312,6 +315,6 @@ fun PickupQrContent(vm: AppViewModel) {
         fontSize = 13.sp,
     )
     vm.rows("order_items")
-        .filter { it.text("order_id") == order.text("id") }
+        .filter { it.text("order_id") == order.orderId() }
         .forEach { AppText("${it.optInt("qty")} × ${it.text("name")}") }
 }

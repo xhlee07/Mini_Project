@@ -366,13 +366,13 @@ begin
   and p.role in ('staff','admin') and exists(select 1 from public.staff s where s.staff_id=p.profile_id)) then
   raise exception 'Staff access required.';
  end if;
- if p_kind='Booking' then select user_id,total into uid,amount from public.bookings where id=p_id and status='Reserved' and not paid;
+ if p_kind='Booking' then select user_id,total into uid,amount from public.bookings where booking_id=p_id and status='Reserved' and not paid;
  elsif p_kind='Order' then select user_id,total into uid,amount from public.orders where id=p_id and status<>'Cancelled' and not paid;
  elsif p_kind='Event' then select user_id,fee into uid,amount from public.registrations where id=p_id and status='Registered' and not paid;
  elsif p_kind in ('Extension30','Extension60') then
   select b.user_id,(r.rate*(case when p_kind='Extension30' then 30 else 60 end)+30)/60 into uid,amount
-  from public.bookings b join public.resources r on r.id=b.resource_id
-  where b.id=p_id and b.paid and b.status in ('Confirmed','Active') and b.ends_at>now();
+  from public.bookings b join public.resources r on r.resource_id=b.resource_id
+  where b.booking_id=p_id and b.paid and b.status in ('Confirmed','Active') and b.ends_at>now();
  end if;
  if uid is null then raise exception 'Already paid or no longer payable.'; end if;
  select spent into spent_total from public.profiles where profile_id=uid;
@@ -427,7 +427,7 @@ begin
    if position('public.staff' in definition)=0 or position('staff_id' in definition)=0 then
     definition:=regexp_replace(definition,
      $pattern$if[[:space:]]+d\.id[[:space:]]+is[[:space:]]+null[[:space:]]+or[[:space:]]+not[[:space:]]+exists[[:space:]]*\([[:space:]]*select[[:space:]]+1[[:space:]]+from[[:space:]]+(public\.)?profiles([[:space:]]+[a-z_][a-z_0-9]*)?[[:space:]]+where[[:space:]]+[^;]*role[[:space:]]+in[[:space:]]*\([[:space:]]*'staff'[[:space:]]*,[[:space:]]*'admin'[[:space:]]*\)[[:space:]]*\)[[:space:]]*then$pattern$,
-     $replacement$if d.id is null or not exists(select 1 from public.profiles p where p.profile_id=d.user_id and p.active and p.role in ('staff','admin') and exists(select 1 from public.staff s where s.staff_id=p.profile_id)) then$replacement$,
+     $replacement$if d.staff_device_id is null or not exists(select 1 from public.profiles p where p.profile_id=d.staff_id and p.active and p.role in ('staff','admin') and exists(select 1 from public.staff s where s.staff_id=p.profile_id)) then$replacement$,
      'gi');
    end if;
    if position('select s.email into email from public.staff' in definition)=0 then
@@ -466,7 +466,7 @@ begin
     $new$perform 1 from public.profiles p where p.profile_id=p_owner and p.active and p.role in ('staff','admin') and exists(select 1 from public.staff s where s.staff_id=p.profile_id) for update;$new$),
    ('public.ctfly_staff_device_auth(text,uuid,uuid)'::text,
     $old$if d.id is null or not exists(select 1 from public.profiles where profile_id=d.user_id and active and role in ('staff','admin')) then$old$,
-    $new$if d.id is null or not exists(select 1 from public.profiles p where p.profile_id=d.user_id and p.active and p.role in ('staff','admin') and exists(select 1 from public.staff s where s.staff_id=p.profile_id)) then$new$),
+    $new$if d.staff_device_id is null or not exists(select 1 from public.profiles p where p.profile_id=d.staff_id and p.active and p.role in ('staff','admin') and exists(select 1 from public.staff s where s.staff_id=p.profile_id)) then$new$),
    ('public.ctfly_staff_device_auth(text,uuid,uuid)'::text,
     $old$select u.email into email from auth.users u where u.id=d.user_id;$old$,
     $new$select s.email into email from public.staff s where s.staff_id=d.user_id;$new$),

@@ -13,7 +13,7 @@ alter table public.staff add column if not exists recovery_code_hash text;
 alter table public.staff add column if not exists recovery_expires timestamptz;
 
 create table if not exists public.ctfly_sessions (
- id uuid primary key default gen_random_uuid(),
+ session_id uuid primary key default gen_random_uuid(),
  profile_id uuid not null references public.profiles(profile_id) on delete cascade,
  access_hash text not null unique,
  refresh_hash text not null unique,

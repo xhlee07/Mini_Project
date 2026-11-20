@@ -22,6 +22,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.ctfly.app.database.remote.profileId
 import com.ctfly.app.database.remote.rows
+import com.ctfly.app.database.remote.categoryId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.CafeZone
 import com.ctfly.app.domain.VenueDirectory
@@ -127,7 +128,7 @@ fun EditorDialog(vm: AppViewModel) {
                         "category_id",
                         "Category",
                         "select",
-                        vm.rows("categories").map { it.text("id") to it.text("name") },
+                        vm.rows("categories").map { it.categoryId() to it.text("name") },
                     ),
                     FormField("price", "Price (sen: RM 6 = 600)", "number"),
                     FormField("threshold", "Low stock threshold", "number", default = "5"),

@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.sp
 import com.ctfly.app.database.remote.obj
 import com.ctfly.app.database.remote.rows
 import com.ctfly.app.database.remote.staffId
+import com.ctfly.app.database.remote.shiftId
+import com.ctfly.app.database.remote.taskId
 import com.ctfly.app.database.remote.text
 import com.ctfly.app.domain.CafeZone
 import com.ctfly.app.domain.StaffDateFilter
@@ -66,7 +68,7 @@ fun CrewScreen(vm: AppViewModel) {
             SurfaceCard {
                 AppText(dateLabel(s.text("starts_at")), fontWeight = FontWeight.Bold)
                 AppText("Until ${dateLabel(s.text("ends_at"))}", color = Muted)
-                val a = vm.rows("attendance").find { it.text("shift_id") == s.text("id") }
+                val a = vm.rows("attendance").find { it.text("shift_id") == s.shiftId() }
                 if (a != null)
                     AppText(
                         "Late ${a.optInt("late_minutes")} min · Worked ${a.optInt("minutes")} min",
@@ -74,7 +76,7 @@ fun CrewScreen(vm: AppViewModel) {
                         fontSize = 12.sp,
                     )
                 Button(
-                    onClick = { vm.action("clock", obj("id" to s.text("id"))) },
+                    onClick = { vm.action("clock", obj("id" to s.shiftId())) },
                     enabled = !vm.busy && (a == null || a.isNull("clock_out")),
                 ) {
                     AppText(
@@ -130,7 +132,7 @@ fun CrewScreen(vm: AppViewModel) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Checkbox(
                         t.optBoolean("done"),
-                        onCheckedChange = { vm.action("task_done", obj("id" to t.text("id"))) },
+                        onCheckedChange = { vm.action("task_done", obj("id" to t.taskId())) },
                         enabled = !vm.busy,
                     )
                     Column {
