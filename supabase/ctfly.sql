@@ -136,8 +136,9 @@ create table public.registrations(registration_id uuid primary key default gen_r
  paid boolean not null default false, status text not null default 'Registered' check(status in ('Registered','Withdrawn')),
  unique(event_id,user_id));
 create table public.matches(match_id bigint generated always as identity primary key, event_id bigint not null references public.events(event_id),
- round int not null, slot int not null, team_a uuid references public.registrations, team_b uuid references public.registrations,
- winner uuid references public.registrations, done boolean not null default false, unique(event_id,round,slot));
+ round int not null, slot int not null, team_a text, team_b text, winner text, done boolean not null default false, unique(event_id,round,slot),
+ check(team_a is null or length(team_a) between 1 and 80), check(team_b is null or length(team_b) between 1 and 80), check(winner is null or length(winner) between 1 and 80),
+ check((not done and winner is null) or (done and winner is not null and (winner=team_a or (team_b is not null and winner=team_b)))));
 create table public.bills(bill_id uuid primary key default gen_random_uuid(), user_id uuid not null references public."User"(user_id),
  kind text not null check(kind in ('Booking','Order','Event','Extension')), source_id uuid not null, subtotal int not null, discount int not null,
  total int not null check(total>=0), points int not null, method text not null default 'Cash at counter', created_at timestamptz not null default now(),
@@ -172,7 +173,9 @@ create table public.handovers(handover_id uuid primary key default gen_random_uu
 create table public.handover_reads(handover_id uuid not null references public.handovers, staff_id uuid not null references public.staff(staff_id), primary key(handover_id,staff_id));
 create table public.tickets(ticket_id uuid primary key default gen_random_uuid(), staff_id uuid not null references public.staff(staff_id),
  asset text not null, title text not null, priority text not null check(priority in ('Low','Normal','Urgent')), status text not null default 'Open',
- assigned_staff uuid references public.staff(staff_id), resolution text not null default '', created_at timestamptz not null default now());
+ resolution text not null default '', created_at timestamptz not null default now());
+create table public.ticket_assignments(assignment_id uuid primary key default gen_random_uuid(), ticket_id uuid not null unique references public.tickets(ticket_id) on delete cascade,
+ staff_id uuid not null references public.staff(staff_id), assigned_at timestamptz not null default now());
 -- Idempotent operations: a network retry cannot repeat an order, payment or booking.
 -- Shared idempotency keys cover both customer and staff mutations, so they stay on profiles.profile_id.
 create table public.requests(request_id uuid primary key, user_id uuid not null references public.profiles(profile_id), result jsonb not null);
@@ -474,8 +477,8 @@ begin
  'orders',coalesce((select jsonb_agg(o order by created_at desc) from (select * from orders where user_id=me.profile_id or crew order by created_at desc limit 300) o),'[]'::jsonb),
  'order_items',coalesce((select jsonb_agg(i) from order_items i join orders o on o.order_id=i.order_id where o.user_id=me.profile_id or crew),'[]'::jsonb),
  'registrations',coalesce((select jsonb_agg(r) from registrations r where r.user_id=me.profile_id or crew),'[]'::jsonb),
- 'matches',coalesce((select jsonb_agg(jsonb_build_object('id',m.match_id,'event_id',m.event_id,'round',m.round,'slot',m.slot,'team_a_id',m.team_a,'team_b_id',m.team_b,'a',m.team_a,'b',m.team_b,'winner',m.winner,'done',m.done,'team_a',a.team,'team_b',b.team,'team_winner',w.team) order by m.round,m.slot)
- from matches m left join registrations a on a.registration_id=m.team_a left join registrations b on b.registration_id=m.team_b left join registrations w on w.registration_id=m.winner),'[]'::jsonb),
+ 'matches',coalesce((select jsonb_agg(jsonb_build_object('id',m.match_id,'event_id',m.event_id,'round',m.round,'slot',m.slot,'team_a',m.team_a,'team_b',m.team_b,'winner',m.winner,'team_winner',m.winner,'done',m.done) order by m.round,m.slot)
+ from matches m),'[]'::jsonb),
  'bills',coalesce((select jsonb_agg(b order by created_at desc) from bills b where b.user_id=me.profile_id or me.role='admin'),'[]'::jsonb),
  'redemptions',coalesce((select jsonb_agg(r) from redemptions r where r.user_id=me.profile_id or crew),'[]'::jsonb),
  'points_transactions',coalesce((select jsonb_agg(p order by created_at desc) from points_transactions p where p.user_id=me.profile_id),'[]'::jsonb),
@@ -490,7 +493,8 @@ begin
  'checklist',coalesce((select jsonb_agg(c) from checklist c where staff_id=me.profile_id and day=(now() at time zone 'Asia/Kuala_Lumpur')::date),'[]'::jsonb),
  'handovers',coalesce((select jsonb_agg(h order by created_at desc) from handovers h),'[]'::jsonb),
  'handover_reads',coalesce((select jsonb_agg(h) from handover_reads h where staff_id=me.profile_id),'[]'::jsonb),
- 'tickets',coalesce((select jsonb_agg(t order by created_at desc) from tickets t),'[]'::jsonb));
+ 'tickets',coalesce((select jsonb_agg((to_jsonb(t) || jsonb_build_object('assigned_staff', a.staff_id)) order by t.created_at desc) from tickets t left join ticket_assignments a on a.ticket_id=t.ticket_id),'[]'::jsonb),
+ 'ticket_assignments',coalesce((select jsonb_agg(a order by a.assigned_at desc) from ticket_assignments a),'[]'::jsonb));
  end if;
  if me.role='admin' then result := result || jsonb_build_object(
  'resources',(select coalesce(jsonb_agg(r order by resource_id),'[]'::jsonb) from resources r),
@@ -523,7 +527,7 @@ create function public.ctfly_action(p_action text, p_data jsonb, p_request uuid)
 language plpgsql security definer set search_path=public, extensions, pg_temp as $$
 declare me profiles; r resources; b bookings; pr products; ev events; rw rewards; sh shifts; tk tickets;
  oid uuid; uid uuid; sid uuid; bid bigint; n int; amount int; disc int; earned int; target profiles;
- st timestamptz; en timestamptz; item jsonb; result jsonb; existing jsonb; m matches; ids uuid[]; size int; rd int; j int; winner_id uuid; invoice bills; day_value date;
+ st timestamptz; en timestamptz; item jsonb; result jsonb; existing jsonb; m matches; sides text[]; size int; rd int; j int; winner_name text; invoice bills; day_value date;
 begin
  -- Serializes mutations per account and keeps retry responses consistent.
  select p.* into me from public.profiles p where p.profile_id=public.ctfly_uid() and p.active
@@ -701,11 +705,14 @@ begin
   else
    select * into tk from tickets where ticket_id=(p_data->>'id')::uuid for update;
    if tk.ticket_id is null then raise exception 'Issue not found.'; end if;
-   if p_action='claim' and tk.status='Open' then update tickets set assigned_staff=me.profile_id,status='In progress' where ticket_id=tk.ticket_id;
-   elsif p_action='resolve' and tk.status='In progress' and (tk.assigned_staff=me.profile_id or me.role='admin') and length(trim(p_data->>'resolution'))>=3 then
+   if p_action='claim' and tk.status='Open' then
+    insert into ticket_assignments(ticket_id,staff_id) values(tk.ticket_id,me.profile_id);
+    update tickets set status='In progress' where ticket_id=tk.ticket_id;
+   elsif p_action='resolve' and tk.status='In progress' and (exists(select 1 from ticket_assignments a where a.ticket_id=tk.ticket_id and a.staff_id=me.profile_id) or me.role='admin') and length(trim(p_data->>'resolution'))>=3 then
     update tickets set status='Resolved',resolution=p_data->>'resolution' where ticket_id=tk.ticket_id;
-   elsif p_action='reopen' and tk.status='Resolved' and (tk.staff_id=me.profile_id or tk.assigned_staff=me.profile_id or me.role='admin') then
-    update tickets set status='Open',assigned_staff=null,resolution='' where ticket_id=tk.ticket_id;
+   elsif p_action='reopen' and tk.status='Resolved' and (tk.staff_id=me.profile_id or exists(select 1 from ticket_assignments a where a.ticket_id=tk.ticket_id and a.staff_id=me.profile_id) or me.role='admin') then
+    delete from ticket_assignments where ticket_id=tk.ticket_id;
+    update tickets set status='Open',resolution='' where ticket_id=tk.ticket_id;
    else raise exception 'This issue cannot be changed. Resolution requires a note and the assigned staff member.'; end if;
   end if;
  elsif p_action in ('save_resource','save_product','restock','save_event','save_reward','save_category','schedule','weekly_roster','void_bill','member_profile','cancel_shift','leave_decision','member_status','bracket','winner') then
@@ -791,11 +798,12 @@ begin
    select * into ev from events where event_id=(p_data->>'event_id')::bigint for update;
    if ev.event_id is null or ev.status<>'Open' then raise exception 'Choose an open event.'; end if;
    if exists(select 1 from registrations where event_id=ev.event_id and status='Registered' and not paid) then raise exception 'Collect all entry fees before generating the bracket.'; end if;
-   select array_agg(registration_id order by registration_id) into ids from registrations where event_id=ev.event_id and status='Registered';
-   n:=coalesce(array_length(ids,1),0); if n<2 then raise exception 'At least two paid teams are required.'; end if;
+   if exists(select 1 from registrations where event_id=ev.event_id and status='Registered' group by team having count(*)>1) then raise exception 'Each registered team needs a different name before the bracket can be generated.'; end if;
+   select array_agg(team order by registration_id) into sides from registrations where event_id=ev.event_id and status='Registered';
+   n:=coalesce(array_length(sides,1),0); if n<2 then raise exception 'At least two paid teams are required.'; end if;
    size:=2; while size<n loop size:=size*2; end loop;
    -- Spread byes: each first-round pair has at least one team.
-   for j in 1..size/2 loop insert into matches(event_id,round,slot,team_a,team_b) values(ev.event_id,1,j,ids[j],ids[j+size/2]); end loop;
+   for j in 1..size/2 loop insert into matches(event_id,round,slot,team_a,team_b) values(ev.event_id,1,j,sides[j],sides[j+size/2]); end loop;
    rd:=2; size:=size/2;
    while size>1 loop for j in 1..size/2 loop insert into matches(event_id,round,slot) values(ev.event_id,rd,j); end loop; size:=size/2; rd:=rd+1; end loop;
    for m in select mm.* from matches mm where mm.event_id=ev.event_id and mm.round=1 and mm.team_b is null loop
@@ -806,11 +814,11 @@ begin
    update events set status='Running' where event_id=ev.event_id;
   elsif p_action='winner' then
    select * into m from matches where match_id=(p_data->>'match_id')::bigint for update;
-   winner_id:=(p_data->>'winner')::uuid;
-   if m.match_id is null or m.done or m.team_a is null or m.team_b is null or winner_id is null or winner_id not in (m.team_a,m.team_b) then raise exception 'Choose a participant in an unfinished match.'; end if;
-   update matches set winner=winner_id,done=true where match_id=m.match_id;
-   if mod(m.slot,2)=1 then update matches set team_a=winner_id where event_id=m.event_id and round=m.round+1 and slot=(m.slot+1)/2;
-   else update matches set team_b=winner_id where event_id=m.event_id and round=m.round+1 and slot=(m.slot+1)/2; end if;
+   winner_name:=trim(p_data->>'winner');
+   if m.match_id is null or m.done or m.team_a is null or m.team_b is null or winner_name is null or winner_name='' or winner_name not in (m.team_a,m.team_b) then raise exception 'Choose a participant in an unfinished match.'; end if;
+   update matches set winner=winner_name,done=true where match_id=m.match_id;
+   if mod(m.slot,2)=1 then update matches set team_a=winner_name where event_id=m.event_id and round=m.round+1 and slot=(m.slot+1)/2;
+   else update matches set team_b=winner_name where event_id=m.event_id and round=m.round+1 and slot=(m.slot+1)/2; end if;
    if not found then update events set status='Completed' where event_id=m.event_id; end if;
   end if;
  else raise exception 'Unknown action.';
@@ -822,7 +830,7 @@ end $$;
 
 -- No table is writable from the APK. Only validated RPCs can change state.
 do $$ declare t text; begin
- foreach t in array array['profiles','resources','bookings','booking_extensions','categories','products','stock_records','orders','order_items','events','registrations','matches','bills','rewards','redemptions','points_transactions','favorites','shifts','attendance','leave_requests','tasks','checklist','handovers','handover_reads','tickets','requests'] loop
+ foreach t in array array['profiles','resources','bookings','booking_extensions','categories','products','stock_records','orders','order_items','events','registrations','matches','bills','rewards','redemptions','points_transactions','favorites','shifts','attendance','leave_requests','tasks','checklist','handovers','handover_reads','tickets','ticket_assignments','requests'] loop
   execute format('alter table public.%I enable row level security',t);
   execute format('revoke all on public.%I from anon, authenticated',t);
  end loop;

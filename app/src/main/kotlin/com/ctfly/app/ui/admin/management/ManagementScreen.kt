@@ -221,24 +221,24 @@ fun ManagementScreen(vm: AppViewModel) {
                                 )
                                 if (m.optBoolean("done"))
                                     AppText(
-                                        "Winner: ${m.text("team_winner")}",
+                                        "Winner: ${m.text("team_winner", m.text("winner"))}",
                                         color = Lime,
                                         fontSize = 12.sp,
                                     )
-                                else if (m.text("team_a_id", m.text("a")).isNotEmpty() && m.text("team_b_id", m.text("b")).isNotEmpty())
+                                else if (m.text("team_a").isNotEmpty() && m.text("team_b").isNotEmpty())
                                     Row {
-                                        listOf("team_a" to "team_a_id", "team_b" to "team_b_id").forEach { (nameKey, idKey) ->
-                                            val participantId = m.text(idKey, m.text(if (nameKey == "team_a") "a" else "b"))
+                                        listOf("team_a", "team_b").forEach { nameKey ->
+                                            val teamName = m.text(nameKey)
                                             TextButton(
                                                 onClick = {
                                                     vm.set("winMatch", m.text("id"))
-                                                    vm.set("winTeam", participantId)
-                                                    vm.set("winName", m.text(nameKey))
+                                                    vm.set("winTeam", teamName)
+                                                    vm.set("winName", teamName)
                                                     vm.set("dialog", "winner")
                                                 }
                                             ) {
                                                 AppText(
-                                                    "${m.text(nameKey)} wins",
+                                                    "$teamName wins",
                                                     fontSize = 11.sp,
                                                 )
                                             }

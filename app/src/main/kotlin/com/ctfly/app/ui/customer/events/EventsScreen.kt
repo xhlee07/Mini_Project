@@ -126,7 +126,7 @@ fun EventsScreen(vm: AppViewModel) {
                     matches.forEach { m ->
                         AppText(
                             "R${m.optInt("round")} · ${m.text("team_a","TBD")}  vs  ${m.text("team_b","Bye / TBD")}" +
-                                (if (m.optBoolean("done")) "  → ${m.text("team_winner")}" else ""),
+                                (if (m.optBoolean("done")) "  → ${m.text("team_winner", m.text("winner"))}" else ""),
                             fontSize = 12.sp,
                             color = Muted,
                         )

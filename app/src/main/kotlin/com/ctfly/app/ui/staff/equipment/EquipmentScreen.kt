@@ -49,6 +49,11 @@ fun EquipmentScreen(vm: AppViewModel) {
         }
         item { StaffDateFilter(vm, "equipmentHistoryDay", "Issue reported date · Malaysia time") }
         items(vm.rows("tickets").onStaffDay(vm, "equipmentHistoryDay", "created_at")) { t ->
+            val assigneeId = vm.rows("ticket_assignments")
+                .firstOrNull { it.ticketId() == t.ticketId() }
+                ?.staffId()
+                .orEmpty()
+                .ifEmpty { t.assignedStaffId() }
             SurfaceCard {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip(t.text("priority"), Orange)
@@ -57,9 +62,9 @@ fun EquipmentScreen(vm: AppViewModel) {
                 AppText(t.text("asset"), fontSize = 12.sp, color = Muted)
                 AppText(t.text("title"), fontWeight = FontWeight.Bold, fontSize = 19.sp)
                 AppText(historyDateLabel(t.text("created_at")), color = Muted, fontSize = 12.sp)
-                if (t.assignedStaffId().isNotEmpty())
+                if (assigneeId.isNotEmpty())
                     AppText(
-                        "Assigned: ${vm.person(t.assignedStaffId())}",
+                        "Assigned: ${vm.person(assigneeId)}",
                         color = Muted,
                         fontSize = 12.sp,
                     )
@@ -73,7 +78,7 @@ fun EquipmentScreen(vm: AppViewModel) {
                             AppText("I’ll take this")
                         }
                     "In progress" ->
-                        if (t.assignedStaffId() == vm.userId || vm.admin)
+                        if (assigneeId == vm.userId || vm.admin)
                             TextButton(
                                 onClick = { vm.openForm("resolve", obj("id" to t.ticketId())) }
                             ) {
@@ -82,7 +87,7 @@ fun EquipmentScreen(vm: AppViewModel) {
                     "Resolved" ->
                         if (
                             t.staffId() == vm.userId ||
-                                t.assignedStaffId() == vm.userId ||
+                                assigneeId == vm.userId ||
                                 vm.admin
                         )
                             TextButton(
